@@ -77,7 +77,35 @@ If you picked read-only in step 2 (typed `n`), write attempts will be rejected �
 - **Read-only by default.** Start read-only, confirm the assistant behaves, then enable writes yourself.
 - **Everything is logged.** Every read and write lands in `C:\Users\YourName\.muse-bridge\audit.log` (one JSON object per line) — audit whenever you like.
 - **Muse can't delete your files.** There is deliberately no delete endpoint.
-- **Changed your mind?** Re-run `powershell -ExecutionPolicy Bypass -File .\uninstall.ps1` from the repo folder — tasks, scripts and data are removed.
+- **Changed your mind?** See "Uninstall" below — one command removes everything.
+
+## Uninstall
+
+1. Open the folder you unzipped earlier (the one containing `uninstall.ps1`), **Shift + right-click** an empty spot → "Open PowerShell window here", then run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+   ```
+
+2. It first removes the two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`) — the service stops immediately.
+3. Then it asks: also delete `C:\Users\YourName\.muse-bridge` (config, whitelist, token)?
+   - Type `y`: everything gone, unrecoverable. A future reinstall starts fresh.
+   - Just press Enter (`n`): config and token are kept. Re-running `install.ps1` later picks up where you left off, no reconfiguration needed.
+
+**What it deliberately leaves behind:**
+
+- Your whitelisted folders themselves (e.g. the files inside `Documents\MuseBridge`) — the uninstaller never touches your files.
+- Python and cloudflared — they're general-purpose tools other software may use.
+
+**Optional**: if you created a named tunnel and want it gone from Cloudflare too:
+
+```powershell
+cloudflared tunnel delete muse-bridge
+```
+
+(Quick tunnels need nothing — they vanish when stopped.)
+
+> Deleted the unzipped folder already? Do it manually: search `taskschd.msc` in the Start menu to open Task Scheduler, find `MuseFileBridge API` and `MuseFileBridge Tunnel`, right-click → Delete; then manually delete the `C:\Users\YourName\.muse-bridge` folder if you want the config gone too.
 
 ## Advanced: technical details
 

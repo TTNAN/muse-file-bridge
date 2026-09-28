@@ -77,7 +77,7 @@ C:\Users\你的用户名\.muse-bridge\token
 - **默认只读。** 第一次先只读，确认 Muse 的行为符合预期，再亲手打开写入。
 - **所有操作都有账本。** Muse 读了哪个、写了哪个文件，都记在 `C:\Users\你的用户名\.muse-bridge\audit.log` 里（每行一条），随时可查。
 - **Muse 删不了你的文件。** 服务端故意没做删除接口。
-- **不想用了就卸。** 回到解压的文件夹，跑 `powershell -ExecutionPolicy Bypass -File .\uninstall.ps1`，任务、脚本、数据一次清掉。
+- **不想用了就卸。** 见下面的"卸载"章节，一条命令清干净。
 
 ## 进阶：技术细节
 
