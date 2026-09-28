@@ -172,15 +172,28 @@ def main() -> int:
               == "sync-me")
         check("client sync", ok)
 
-        # --- token rotation ---
+        # --- token rotation (new token is NOT in the response, only in the file) ---
         s, r = req(base + "/api/rotate-token", token, {})
-        new_token = r.get("token", "")
-        check("rotate-token returns new token", s == 200 and len(new_token) > 20)
+        check("rotate-token ok", s == 200 and r.get("ok") is True)
+        check("rotate-token leaks no token", "token" not in r)
+        with open(os.path.join(home, ".muse-bridge", "token")) as f:
+            new_token = f.read().strip()
+        check("new token differs", len(new_token) > 20 and new_token != token)
         s, _ = req(base + "/api/health", token)
         check("old token dead after rotation", s == 401)
         s, _ = req(base + "/api/health", new_token)
         check("new token works", s == 200)
         token = new_token
+
+        # --- client rotate-token ---
+        p = subprocess.run(
+            [sys.executable, CLIENT, "--allow-http", "--base-url", base,
+             "--token", token, "rotate-token"],
+            capture_output=True, text=True)
+        with open(os.path.join(home, ".muse-bridge", "token")) as f:
+            token = f.read().strip()
+        s, _ = req(base + "/api/health", token)
+        check("client rotate-token", p.returncode == 0 and s == 200)
 
         # --- audit log ---
         entries = []

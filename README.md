@@ -112,9 +112,9 @@ Every endpoint requires `Authorization: Bearer <token>`.
 | GET | `/api/read?root=NAME&path=REL` | Read a file (UTF-8 text, or base64 for binary) |
 | POST | `/api/write` | JSON `{root, path, content, encoding}` — writes a file, creating parent dirs |
 | POST | `/api/mkdir` | JSON `{root, path}` — creates a directory |
-| POST | `/api/rotate-token` | Rotates the token — the old one stops working immediately, the new one is returned in the response |
+| POST | `/api/rotate-token` | Rotates the token — the old one stops working immediately. The new token is written only to the PC's token file and is **never** returned in the response (so it can't leak through chat) |
 
-Limits: 2 MB per read, 10 MB per write, ~1000 requests/minute per client IP (`429` when exceeded). In read-only mode (`read_only: true` in `config.json`), `write`/`mkdir` return `403`. There is intentionally no delete endpoint.
+Limits: 2 MB per read, 10 MB per write, ~1000 requests/minute **shared by all tunnel traffic** (the server sees every tunnelled request as `127.0.0.1`; `429` when exceeded). In read-only mode (`read_only: true` in `config.json`), `write`/`mkdir` return `403`. There is intentionally no delete endpoint.
 
 Every request is audit-logged on the PC (`%USERPROFILE%\.muse-bridge\audit.log`, JSON lines): timestamp, endpoint, root, relative path, status code.
 
@@ -126,7 +126,7 @@ Setting up an AI assistant to use this API? Paste [CONNECTOR-BRIEF.md](CONNECTOR
 - Every request needs the bearer token (compared in constant time). The token lives in `%USERPROFILE%\.muse-bridge\token` on your PC and is never committed anywhere. Rotate it anytime with `POST /api/rotate-token` (no restart needed).
 - Only directories listed in `roots` are visible. `..` traversal, absolute paths and symlink escapes are rejected (paths are resolved against their real path before checking). The default config exposes only an empty `Documents\MuseBridge` folder.
 - New installs default to **read-only mode** — reads work, writes are rejected — until you set `read_only: false` in `config.json`. Recommended for the first connection to any assistant.
-- Requests are rate-limited (~1000/min per IP) and audit-logged (`audit.log`): time, endpoint, root, path, status code — so you can always see what an assistant read or wrote.
+- Requests are rate-limited (~1000/min, shared by all tunnel traffic since the server sees it all as `127.0.0.1`) and audit-logged (`audit.log`): time, endpoint, root, path, status code — so you can always see what an assistant read or wrote.
 - Writes are atomic (temp file + replace), so an interrupted transfer never leaves a half-written file.
 - The tunnel provides TLS. A named tunnel gives you a stable address; the installer can also spin up a `trycloudflare.com` quick tunnel for a first try, but its address changes on every restart.
 
@@ -136,7 +136,7 @@ Setting up an AI assistant to use this API? Paste [CONNECTOR-BRIEF.md](CONNECTOR
 - **Client can't reach the server** — the PC is asleep/off, or a task isn't running. Check Task Scheduler → `MuseFileBridge API` / `MuseFileBridge Tunnel` → Last Run Result, and `%USERPROFILE%\.muse-bridge\server.log`.
 - **Tunnel address changed** — you recreated the tunnel; update `MUSE_BRIDGE_URL` (or your assistant's stored URL) to the new hostname.
 - **Port already in use** — change `port` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` task (the tunnel command uses the same port).
-- **Rotate the token** — easiest: `python client/pcfile.py` has no rotate command yet, so use curl: `curl -X POST -H "Authorization: Bearer <old>" https://<host>/api/rotate-token` — the response contains the new token. Or stop the `MuseFileBridge API` task, delete `%USERPROFILE%\.muse-bridge\token`, and start the task again (a new token is generated), then update the client side.
+- **Rotate the token** — `python client/pcfile.py rotate-token` (needs `MUSE_BRIDGE_TOKEN`/`MUSE_BRIDGE_URL` set). The old token dies immediately; copy the new one from `%USERPROFILE%\.muse-bridge\token` into the client side — it is never printed or returned over the API.
 - **Writes rejected with `403`** — the server is in read-only mode. Set `read_only: false` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` task.
 - **What did the assistant touch?** — check `%USERPROFILE%\.muse-bridge\audit.log` (one JSON object per line).
 - **`tunnel route dns` fails** — the domain's DNS zone must be on the Cloudflare account you logged into.

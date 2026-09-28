@@ -23,6 +23,8 @@ Examples:
     python pcfile.py write projects notes/todo.txt ./todo.txt
     python pcfile.py mkdir projects new-folder
     python pcfile.py sync ./my-plugin plugins my-plugin
+    python pcfile.py rotate-token   # old token dies immediately; copy the new
+                                    # one from the PC's token file afterwards
 
 Python 3.9+, standard library only.
 """
@@ -155,6 +157,8 @@ def main() -> int:
     p = sub.add_parser("mkdir", help="create a directory")
     p.add_argument("root")
     p.add_argument("remote_path")
+    sub.add_parser("rotate-token",
+                   help="rotate the server token (old token dies immediately)")
     p = sub.add_parser("sync", help="upload a whole local folder to the PC")
     p.add_argument("local_dir", help="local folder to upload")
     p.add_argument("root")
@@ -187,6 +191,18 @@ def main() -> int:
         elif args.cmd == "mkdir":
             status, data = call(base_url, token, "POST", "/api/mkdir",
                                body={"root": args.root, "path": args.remote_path})
+        elif args.cmd == "rotate-token":
+            status, data = call(base_url, token, "POST", "/api/rotate-token",
+                               body={})
+            if status == 200:
+                # 新令牌只写在服务端本机文件里,响应里不返回:
+                # 令牌永远不经过聊天/终端明文传输。
+                print("token rotated. The old token is dead NOW.",
+                      file=sys.stderr)
+                print("Copy the new token from the PC's token file "
+                      "(%USERPROFILE%\\.muse-bridge\\token) into your "
+                      "credential store; never paste it into chat.",
+                      file=sys.stderr)
         elif args.cmd == "sync":
             return cmd_sync(base_url, token, args.local_dir,
                             args.root, args.remote_dir)

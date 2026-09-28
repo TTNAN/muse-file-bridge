@@ -3,13 +3,15 @@
 .SYNOPSIS
     卸载 Muse File Bridge 的开机自启动任务。
 .DESCRIPTION
-    删除计划任务 "MuseBridge API" 与 "MuseBridge Tunnel",
+    删除计划任务 "MuseFileBridge API" 与 "MuseFileBridge Tunnel"
+    (兼容旧版的 "MuseBridge API" / "MuseBridge Tunnel" 残留),
     可选是否一并删除 %USERPROFILE%\.muse-bridge (配置、白名单、令牌)。
 #>
 
 $ErrorActionPreference = "Stop"
 
-foreach ($name in @("MuseFileBridge API", "MuseFileBridge Tunnel")) {
+foreach ($name in @("MuseFileBridge API", "MuseFileBridge Tunnel",
+                    "MuseBridge API", "MuseBridge Tunnel")) {
     $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if ($t) {
         Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue

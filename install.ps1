@@ -92,8 +92,8 @@ if (Test-Path $TokenFile) {
 } else {
     $token = (& $py.Source -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
     Set-Content -Path $TokenFile -Value $token -NoNewline -Encoding Ascii
-    try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R)" | Out-Null } catch { }
-    Write-Host "已生成新令牌,保存在: $TokenFile (已设为仅你可读)"
+    try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R,W)" | Out-Null } catch { }
+    Write-Host "已生成新令牌,保存在: $TokenFile (仅你可读写,供服务端轮换令牌时写入)"
 }
 Write-Host "等 Muse 发你安全卡片后,把这个文件里的令牌填进去。不要发在聊天里。"
 

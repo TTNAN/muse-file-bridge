@@ -29,19 +29,24 @@ All endpoints require the bearer token. `root` is a whitelisted folder name (fro
 | GET | `/api/read?root=NAME&path=REL` | — | `{"encoding": "text", "content": "..."}` or `{"encoding": "base64", "content": "..."}` |
 | POST | `/api/write` | `{"root", "path", "content", "encoding": "text\|base64"}` | `{"ok": true, "bytes": N}` — creates parent dirs, atomic replace |
 | POST | `/api/mkdir` | `{"root", "path"}` | `{"ok": true}` |
-| POST | `/api/rotate-token` | — | `{"ok": true, "token": "<new token>"}` — old token is invalidated immediately |
+| POST | `/api/rotate-token` | — | `{"ok": true}` — old token dies immediately; the new token is written **only** to the server's local token file and is **never** returned in the response |
 
 Error codes: `400` bad request · `401` bad token · `403` read-only mode (`write`/`mkdir` refused) · `404` not found · `413` too large · `429` rate limited.
+
+## Token handling (hard rules)
+
+- **Never display, repeat, or paste any token into chat**, and never write one into a skill, doc, or log. Tokens travel only through the platform's secure credential flow.
+- This applies doubly to rotation: `/api/rotate-token` deliberately does **not** return the new token. After rotating, ask the user to copy it from `%USERPROFILE%\.muse-bridge\token` on their PC into the credential store themselves.
 
 ## Limits & behavior rules
 
 - Single read ≤ 2 MB, single write ≤ 10 MB. There is intentionally no delete endpoint.
-- Rate limit: 1000 requests/minute per client IP (exceeding returns `429`).
+- Rate limit: ~1000 requests/minute, **shared by all tunnel traffic** — the server sees every tunnelled request as `127.0.0.1`, so this is not per-public-IP limiting. Fine for one user; do not assume it stops a determined scanner.
 - `read_only` may be `true` on first connection: reads work, `write`/`mkdir` return `403`. If the user wants writes, tell them to set `read_only=false` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` scheduled task — do not work around it.
 - Every request is audit-logged on the PC (`%USERPROFILE%\.muse-bridge\audit.log`): timestamp, endpoint, root, path, status code. If the user asks "what did you change?", this log is the source of truth.
 - Reads: prefer `list` before `read` to avoid guessing paths. Binary files come back base64-encoded — decode before use, encode before `write`.
 - Writes: prefer the `sync`-style flow for whole folders (mkdir + write per file). Writes are atomic (temp file + replace), so a killed transfer never leaves a half-written file.
-- Token rotation: call `/api/rotate-token` when the token may have leaked; persist the returned token and discard the old one.
+- Token rotation: call `/api/rotate-token` when the token may have leaked, then have the user copy the new token from `%USERPROFILE%\.muse-bridge\token` into the credential store. You lose access until they do — that is intentional.
 
 ## First-connection checklist
 

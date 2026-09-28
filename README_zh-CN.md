@@ -112,9 +112,9 @@ python client\pcfile.py sync .\my-plugin plugins my-plugin
 | GET | `/api/read?root=NAME&path=REL` | 读文件（UTF-8 文本直接返回，二进制转 base64） |
 | POST | `/api/write` | JSON `{root, path, content, encoding}` —— 写文件，自动创建父目录 |
 | POST | `/api/mkdir` | JSON `{root, path}` —— 建目录 |
-| POST | `/api/rotate-token` | 轮换令牌——旧令牌立即失效，新令牌在响应里返回 |
+| POST | `/api/rotate-token` | 轮换令牌——旧令牌立即失效。新令牌只写进电脑上的 token 文件，**不会在响应里返回**（防止经聊天记录泄漏） |
 
-限制：单次读取 2 MB，单次写入 10 MB，每个 IP 每分钟约 1000 次请求（超了返回 `429`）。只读模式（`config.json` 里 `read_only: true`）下 `write`/`mkdir` 返回 `403`。特意没有提供删除接口。
+限制：单次读取 2 MB，单次写入 10 MB，每分钟约 1000 次请求（**整条隧道共享**——服务端看到的隧道请求全是 `127.0.0.1`，超了返回 `429`）。只读模式（`config.json` 里 `read_only: true`）下 `write`/`mkdir` 返回 `403`。特意没有提供删除接口。
 
 所有请求都会记审计日志（电脑上 `%USERPROFILE%\.muse-bridge\audit.log`，每行一个 JSON）：时间、接口、目录、相对路径、结果码。
 
@@ -126,7 +126,7 @@ python client\pcfile.py sync .\my-plugin plugins my-plugin
 - 每个请求都要带 bearer token（常量时间比较）。令牌只存在你电脑 `%USERPROFILE%\.muse-bridge\token` 里，绝不会被提交到仓库。随时可以调 `POST /api/rotate-token` 轮换，不用重启。
 - 只能访问 `roots` 白名单里的目录。`..` 穿越、绝对路径、符号链接逃逸都会被拦截（先解析成真实路径再校验）。默认配置只开放一个空的 `文档\MuseBridge`。
 - 新装默认是**只读模式**——能读不能写——确认要让助手写文件时再把 `config.json` 里的 `read_only` 改成 `false`。第一次对接任何助手都建议先只读。
-- 请求限流（每 IP 每分钟约 1000 次）+ 审计日志（`audit.log`：时间、接口、目录、路径、结果码）——助手读了写了什么，随时可查。
+- 请求限流（每分钟约 1000 次，整条隧道共享——服务端看到的隧道请求全是 `127.0.0.1`）+ 审计日志（`audit.log`：时间、接口、目录、路径、结果码）——助手读了写了什么，随时可查。
 - 写文件是原子操作（临时文件 + 替换），传一半断掉也不会留下半截文件。
 - 隧道提供 TLS。命名隧道地址稳定；安装脚本也能起一个 `trycloudflare.com` 临时隧道先体验，但每次重启地址都会变。
 
@@ -136,7 +136,7 @@ python client\pcfile.py sync .\my-plugin plugins my-plugin
 - **客户端连不上服务端**——电脑休眠/关机了，或者某个计划任务没跑起来。去任务计划程序看 `MuseFileBridge API` / `MuseFileBridge Tunnel` 的"上次运行结果"，以及 `%USERPROFILE%\.muse-bridge\server.log` 日志。
 - **隧道地址变了**——你重建过隧道；把 `MUSE_BRIDGE_URL`（或助手存的地址）更新成新域名。
 - **端口被占用**——改 `%USERPROFILE%\.muse-bridge\config.json` 里的 `port`，重启 `MuseFileBridge API` 任务（隧道命令里是同一个端口）。
-- **换令牌**——最省事：`curl -X POST -H "Authorization: Bearer <旧令牌>" https://<你的域名>/api/rotate-token`，响应里就是新令牌。或者停掉 `MuseFileBridge API` 任务，删掉 `%USERPROFILE%\.muse-bridge\token` 再启动任务，会生成新令牌（无窗口运行时直接打开 token 文件看），然后更新客户端那边。
+- **换令牌**——`python client/pcfile.py rotate-token`（需先设好 `MUSE_BRIDGE_TOKEN`/`MUSE_BRIDGE_URL`）。旧令牌立即失效；新令牌只写在电脑 `%USERPROFILE%\.muse-bridge\token` 里，API 不返回、终端不打印，自己去文件里抄，然后更新客户端那边。
 - **写操作被拒绝（`403`）**——服务端在只读模式。把 `%USERPROFILE%\.muse-bridge\config.json` 里的 `read_only` 改成 `false`，重启 `MuseFileBridge API` 任务。
 - **助手到底动了哪些文件？**——看 `%USERPROFILE%\.muse-bridge\audit.log`，每行一个 JSON。
 - **`tunnel route dns` 失败**——该域名的 DNS zone 必须在你登录的那个 Cloudflare 账号下。

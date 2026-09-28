@@ -14,6 +14,8 @@ Muse File Bridge - Windows 本地文件 API 服务端
   - 只能操作 config.json 里 roots 白名单中的目录;路径穿越(../)会被直接拒绝。
     首次运行默认只开放一个空的 ~/Documents/MuseBridge,且为只读模式。
   - 每个请求限流(默认每 IP 每分钟 1000 次),超了返回 429。
+    注意: 经 Cloudflare 隧道进来的请求在服务端看来都是 127.0.0.1,
+    所以这是整条隧道共享的桶,不是按公网来源限的。
   - 所有请求记审计日志(.muse-bridge/audit.log): 时间、接口、目录、路径、结果码。
   - 写文件是原子操作(临时文件 + 替换),不会留下半截文件。
 
@@ -49,7 +51,8 @@ Muse File Bridge - Windows 本地文件 API 服务端
   GET  /api/read?root=NAME&path=REL  -> 读文件(文本直接返回,二进制转 base64)
   POST /api/write  {root, path, content, encoding} -> 写文件(自动建父目录,原子写入)
   POST /api/mkdir  {root, path}      -> 建目录
-  POST /api/rotate-token             -> 轮换令牌(旧令牌立即失效,返回新令牌)
+  POST /api/rotate-token             -> 轮换令牌(旧令牌立即失效;新令牌只写本机
+                                        token 文件,不在响应里返回,防聊天记录泄漏)
 
   只读模式(read_only=true)下 write/mkdir 返回 403;超限流返回 429。
   审计日志记在 %USERPROFILE%\.muse-bridge\audit.log。
@@ -96,6 +99,40 @@ def check_rate(ip: str) -> bool:
         return count <= RATE_LIMIT
 
 
+def windows_documents_dir():
+    """Windows 上取真正的「文档」文件夹(和安装脚本的 GetFolderPath 对齐)。
+
+    失败时返回 None,调用方回退到 ~/Documents。ctypes 仍是标准库。
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD),
+                        ("Data2", wintypes.WORD),
+                        ("Data3", wintypes.WORD),
+                        ("Data4", ctypes.c_ubyte * 8)]
+
+        # FOLDERID_Documents = FDD39AD0-238F-46AF-ADB4-6C85480369C7
+        fid = GUID(0xFDD39AD0, 0x238F, 0x46AF,
+                   (ctypes.c_ubyte * 8)(0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+        sh = ctypes.windll.shell32.SHGetKnownFolderPath
+        sh.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD,
+                       wintypes.HANDLE, ctypes.POINTER(wintypes.LPWSTR)]
+        sh.restype = wintypes.HRESULT
+        out = wintypes.LPWSTR()
+        if sh(ctypes.byref(fid), 0, None, ctypes.byref(out)) == 0 and out.value:
+            docs = out.value
+            ctypes.windll.ole32.CoTaskMemFree(out)
+            return docs
+    except Exception:
+        pass
+    return None
+
+
 def load_config():
     """返回 (port, roots, read_only)。
 
@@ -104,7 +141,9 @@ def load_config():
     """
     os.makedirs(APP_DIR, exist_ok=True)
     if not os.path.exists(CONFIG_PATH):
-        bridge_dir = os.path.join(os.path.expanduser("~"), "Documents", "MuseBridge")
+        docs = windows_documents_dir() or os.path.join(os.path.expanduser("~"),
+                                                       "Documents")
+        bridge_dir = os.path.join(docs, "MuseBridge")
         os.makedirs(bridge_dir, exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"port": 18790, "read_only": True,
@@ -288,7 +327,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "invalid json"})
 
         if u.path == "/api/rotate-token":
-            # 用旧令牌换新令牌: 旧令牌立即失效,新令牌只通过本次响应返回
+            # 轮换令牌: 旧令牌立即失效。新令牌只写本机 token 文件,
+            # 不在响应里返回 —— 令牌永远不经过聊天/日志明文传输。
+            # 轮换后请从 %USERPROFILE%\.muse-bridge\token 把新令牌抄到安全卡片。
             new_tok = secrets.token_urlsafe(32)
             with open(TOKEN_PATH, "w", encoding="utf-8") as f:
                 f.write(new_tok)
@@ -297,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 pass
             self.server.token = new_tok
-            return self._send(200, {"ok": True, "token": new_tok})
+            return self._send(200, {"ok": True})
 
         if u.path in ("/api/write", "/api/mkdir") and self.server.read_only:
             return self._send(403, {"error": "read-only mode "
