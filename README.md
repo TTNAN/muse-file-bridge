@@ -16,6 +16,10 @@ flowchart LR
 
 Made for Muse first: the installer, the docs, and [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) (a paste-ready setup brief for Muse) all assume Muse on the other end. The API itself is plain HTTPS + bearer token, so any HTTP client can use it too.
 
+### Project status
+
+This project exists because Muse currently has no official desktop app for Windows or Linux — this bridge is a workaround for that gap. If Meta ever ships official Windows/Linux apps, this project will be retired and no longer maintained.
+
 ## Before you start
 
 - A Windows 10/11 PC, connected to the internet
