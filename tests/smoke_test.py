@@ -190,9 +190,12 @@ def main() -> int:
             [sys.executable, CLIENT, "--allow-http", "--base-url", base,
              "--token", token, "rotate-token"],
             capture_output=True, text=True)
+        print(f"DEBUG client rc={p.returncode} stdout={p.stdout[-200:]!r} "
+              f"stderr={p.stderr[-300:]!r}", flush=True)
         with open(os.path.join(home, ".muse-bridge", "token")) as f:
             token = f.read().strip()
-        s, _ = req(base + "/api/health", token)
+        s, hb = req(base + "/api/health", token)
+        print(f"DEBUG health s={s} body={str(hb)[:120]!r}", flush=True)
         check("client rotate-token", p.returncode == 0 and s == 200)
 
         # --- audit log ---
