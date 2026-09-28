@@ -18,6 +18,7 @@ Examples:
     python pcfile.py read projects notes/todo.txt
     python pcfile.py write projects notes/todo.txt ./todo.txt
     python pcfile.py mkdir projects new-folder
+    python pcfile.py sync ./my-plugin plugins my-plugin
 
 Python 3.9+, standard library only.
 """
@@ -76,6 +77,52 @@ def call(base_url: str, token: str, method: str, path: str,
         return 0, {"error": f"cannot reach the server: {e}"}
 
 
+def _remote_join(*parts: str) -> str:
+    """Join remote path segments with '/', dropping empties."""
+    return "/".join(p.strip("/") for p in parts if p and p.strip("/"))
+
+
+def cmd_sync(base_url: str, token: str, local_dir: str, root: str,
+             remote_dir: str) -> int:
+    """Upload a whole local folder to the PC, preserving structure."""
+    local_dir = os.path.abspath(local_dir)
+    if not os.path.isdir(local_dir):
+        print(f"error: not a directory: {local_dir}", file=sys.stderr)
+        return 1
+    n_files = n_bytes = 0
+    for dirpath, _dirnames, filenames in os.walk(local_dir):
+        rel = os.path.relpath(dirpath, local_dir).replace(os.sep, "/")
+        rel = "" if rel == "." else rel
+        rdir = _remote_join(remote_dir, rel)
+        status, data = call(base_url, token, "POST", "/api/mkdir",
+                            body={"root": root, "path": rdir})
+        if status != 200:
+            print(f"error: mkdir failed for {rdir}: {data}", file=sys.stderr)
+            return 1
+        for name in filenames:
+            with open(os.path.join(dirpath, name), "rb") as f:
+                raw = f.read()
+            rfile = _remote_join(remote_dir, rel, name)
+            try:
+                body = {"root": root, "path": rfile,
+                        "content": raw.decode("utf-8"), "encoding": "text"}
+            except UnicodeDecodeError:
+                body = {"root": root, "path": rfile,
+                        "content": base64.b64encode(raw).decode(),
+                        "encoding": "base64"}
+            status, data = call(base_url, token, "POST", "/api/write",
+                                body=body)
+            if status != 200:
+                print(f"error: write failed for {rfile}: {data}",
+                      file=sys.stderr)
+                return 1
+            n_files += 1
+            n_bytes += len(raw)
+            print(f"  ok {rfile} ({len(raw)} bytes)")
+    print(f"synced {n_files} files, {n_bytes} bytes -> {root}:{remote_dir or '/'}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Muse File Bridge client")
     ap.add_argument("--base-url", help="tunnel URL, e.g. https://bridge.yourdomain.com")
@@ -96,6 +143,10 @@ def main() -> int:
     p = sub.add_parser("mkdir", help="create a directory")
     p.add_argument("root")
     p.add_argument("remote_path")
+    p = sub.add_parser("sync", help="upload a whole local folder to the PC")
+    p.add_argument("local_dir", help="local folder to upload")
+    p.add_argument("root")
+    p.add_argument("remote_dir", help="destination folder on the PC")
 
     args = ap.parse_args()
     try:
@@ -124,6 +175,9 @@ def main() -> int:
         elif args.cmd == "mkdir":
             status, data = call(base_url, token, "POST", "/api/mkdir",
                                body={"root": args.root, "path": args.remote_path})
+        elif args.cmd == "sync":
+            return cmd_sync(base_url, token, args.local_dir,
+                            args.root, args.remote_dir)
         else:
             ap.error("unknown command")
     except SystemExit:

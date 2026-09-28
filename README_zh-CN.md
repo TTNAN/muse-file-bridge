@@ -25,7 +25,17 @@ Windows 电脑                                        公网                 客
 
 ### 1. 服务端（Windows）
 
-需要 Python 3.9+。
+**推荐——一键安装。** 下载本仓库（Code → Download ZIP），解压后在 PowerShell 里运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+它会自动检查 Python 3.9+、用 winget 装 `cloudflared`、生成令牌、创建配置、引导你建隧道，然后把**服务端和隧道都注册成登录自启动**——无黑窗口、日志写到 `%USERPROFILE%\.muse-bridge\server.log`、挂了自动重启。不需要管理员权限。
+
+令牌保存在 `%USERPROFILE%\.muse-bridge\token`——等助手问你要时再给，绝不要贴进聊天记录。
+
+**手动安装**（如果你更喜欢自己动手）：
 
 ```powershell
 python server\muse-file-api.py
@@ -56,6 +66,14 @@ cloudflared tunnel route dns muse-bridge bridge.你的域名.com
 cloudflared tunnel run --url http://127.0.0.1:18790 muse-bridge
 ```
 
+### 开机自启动
+
+`install.ps1` 会注册两个计划任务——`MuseBridge API` 和 `MuseBridge Tunnel`，用户登录即启动、挂了自动重启。在任务计划程序（`taskschd.msc`）里管理，或一键卸载：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall.ps1
+```
+
 ### 3. 客户端
 
 ```bash
@@ -67,6 +85,7 @@ python client/pcfile.py list projects
 python client/pcfile.py read projects notes/todo.txt
 python client/pcfile.py write projects notes/todo.txt ./todo.txt
 python client/pcfile.py mkdir projects new-folder
+python client/pcfile.py sync ./my-plugin plugins my-plugin   # 上传整个文件夹
 ```
 
 ## API 说明
@@ -90,9 +109,21 @@ python client/pcfile.py mkdir projects new-folder
 - 只能访问 `roots` 白名单里的目录。`..` 穿越、绝对路径、符号链接逃逸都会被拦截（先解析成真实路径再校验）。
 - 隧道提供 TLS。命名隧道地址稳定；`trycloudflare.com` 的临时隧道也能先体验，但每次重启地址都会变。
 
+## 常见问题
+
+- **报 `401 unauthorized`**——客户端用的令牌和电脑上 `%USERPROFILE%\.muse-bridge\token` 对不上。重新复制一次（别贴进聊天，用助手的安全卡片流程）。
+- **客户端连不上服务端**——电脑休眠/关机了，或者某个计划任务没跑起来。去任务计划程序看 `MuseBridge API` / `MuseBridge Tunnel` 的"上次运行结果"，以及 `%USERPROFILE%\.muse-bridge\server.log` 日志。
+- **隧道地址变了**——你重建过隧道；把 `MUSE_BRIDGE_URL`（或助手存的地址）更新成新域名。
+- **端口被占用**——改 `%USERPROFILE%\.muse-bridge\config.json` 里的 `port`，重启 `MuseBridge API` 任务（隧道命令里是同一个端口）。
+- **换令牌**——停掉 `MuseBridge API` 任务，删掉 `%USERPROFILE%\.muse-bridge\token`，再启动任务，会生成新令牌（无窗口运行时直接打开 token 文件看），然后更新客户端那边。
+- **`tunnel route dns` 失败**——该域名的 DNS zone 必须在你登录的那个 Cloudflare 账号下。
+
 ## 项目结构
 
 ```
+install.ps1               一键安装:检查 Python、装 cloudflared、生成令牌、
+                          建配置、引导建隧道、注册自启动任务 (Windows)
+uninstall.ps1             删除自启动任务 (Windows)
 server/muse-file-api.py   Windows 文件 API 服务端（仅用 Python 标准库）
 client/pcfile.py          独立客户端（仅用 Python 标准库）
 ```

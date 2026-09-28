@@ -13,9 +13,14 @@ Muse File Bridge - Windows 本地文件 API 服务端
   - 只能操作 config.json 里 roots 白名单中的目录;路径穿越(../)会被直接拒绝。
 
 安装运行(只需一次):
+  推荐: 下载本仓库后,在 PowerShell 里运行仓库根目录的 install.ps1,
+  它会自动检查 Python、下载 cloudflared、生成令牌、建隧道,
+  并把本服务和隧道都注册成开机(登录)自启动。详见 README。
+  手动安装:
   1. 安装 Python 3.9+: https://www.python.org/downloads/ (安装时勾选 "Add python.exe to PATH")
   2. 把本脚本放到一个固定位置,例如 D:\\Tools\\muse-file-api.py
   3. 双击运行,或在 PowerShell 里运行: python D:\\Tools\\muse-file-api.py
+     后台无窗口运行: pythonw D:\\Tools\\muse-file-api.py --log-file %USERPROFILE%\\.muse-bridge\\server.log
   4. 首次运行会打印一串访问令牌(只显示这一次)。等 Muse 发你安全卡片后,
      把这串令牌填进卡片里 —— 不要发在聊天记录里。
   5. 用记事本打开 %USERPROFILE%\\.muse-bridge\\config.json,
@@ -40,6 +45,7 @@ Muse File Bridge - Windows 本地文件 API 服务端
   POST /api/mkdir  {root, path}      -> 建目录
 """
 
+import argparse
 import base64
 import binascii
 import hashlib
@@ -236,6 +242,15 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    ap = argparse.ArgumentParser(description="Muse File Bridge server")
+    ap.add_argument("--log-file", default=None,
+                    help="append stdout/stderr here (for background runs with pythonw)")
+    args = ap.parse_args()
+    if args.log_file:
+        # 行缓冲,崩溃时也能留下最后几行日志
+        log = open(args.log_file, "a", encoding="utf-8", buffering=1)
+        sys.stdout = log
+        sys.stderr = log
     port, roots = load_config()
     token, is_new = load_token()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
