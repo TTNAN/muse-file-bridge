@@ -1,18 +1,17 @@
-# Muse File Bridge
+**English** | [简体中文](README_zh-CN.md)
 
-[中文版](README_zh-CN.md)
+# Muse File Bridge
 
 **One sentence: let Muse read and write files in specific folders on your Windows PC.**
 
 You say "write me a Python script and put it in my Documents" — seconds later the file is on your disk. No more copy-pasting code out of chat.
 
-```
-Windows PC                               Internet                     Client              
-┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
-│ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
-│ listens on 127.0.0.1:18790 only  │◄────│  (TLS, your domain)  │◄────│ or curl /        │
-│ whitelisted folders only         │     │                      │     │ any HTTP client  │
-└──────────────────────────────────┘     └──────────────────────┘     └──────────────────┘
+```mermaid
+flowchart LR
+    PC["Windows PC<br/>muse-file-api.py<br/>listens on 127.0.0.1:18790 only<br/>whitelisted folders only"]
+    NET["Internet<br/>Cloudflare Tunnel<br/>TLS encrypted"]
+    CLI["Client<br/>pcfile.py / curl<br/>any HTTP client"]
+    CLI --> NET --> PC
 ```
 
 Made for Muse first: the installer, the docs, and [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) (a paste-ready setup brief for Muse) all assume Muse on the other end. The API itself is plain HTTPS + bearer token, so any HTTP client can use it too.

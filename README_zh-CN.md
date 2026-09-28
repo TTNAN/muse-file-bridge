@@ -1,18 +1,17 @@
-# Muse File Bridge
+[English](README.md) | **简体中文**
 
-[English](README.md)
+# Muse File Bridge
 
 **一句话：让 Muse 能直接读写你 Windows 电脑上指定文件夹里的文件。**
 
 你说"帮我写个 Python 脚本放 Documents 里"，几秒钟后文件就出现在你电脑上了——不用再从聊天记录里复制粘贴代码。
 
-```
-Windows 电脑                             公网                         客户端              
-┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
-│ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
-│ 只监听 127.0.0.1:18790           │◄────│  (TLS, 你的域名)     │◄────│ 或 curl /        │
-│ 仅开放白名单目录                 │     │                      │     │ 任何 HTTP 客户端 │
-└──────────────────────────────────┘     └──────────────────────┘     └──────────────────┘
+```mermaid
+flowchart LR
+    PC["Windows 电脑<br/>muse-file-api.py<br/>只监听 127.0.0.1:18790<br/>仅开放白名单目录"]
+    NET["公网<br/>Cloudflare Tunnel<br/>TLS 加密传输"]
+    CLI["客户端<br/>pcfile.py / curl<br/>任意 HTTP 客户端"]
+    CLI --> NET --> PC
 ```
 
 为 Muse 而造：安装脚本、文档、[CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md)（给 Muse 的粘贴即用对接说明）都是按 Muse 在对面来写的。API 本身是普通 HTTPS + 令牌，任何 HTTP 客户端也都能用。
