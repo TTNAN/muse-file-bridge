@@ -16,6 +16,10 @@ flowchart LR
 
 为 Muse 而造：安装脚本、文档、[CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md)（给 Muse 的粘贴即用对接说明）都是按 Muse 在对面来写的。API 本身是普通 HTTPS + 令牌，任何 HTTP 客户端也都能用。
 
+### 项目状态
+
+这个项目之所以做，是因为目前 Muse 还没有官方的 Windows/Linux 桌面端，它只是填补这个缺口的权宜之计。如果 Meta 日后推出官方 Windows/Linux 桌面客户端，本项目将停止维护。
+
 ## 开始之前，你需要
 
 - 一台 Windows 10/11 电脑，连着网
