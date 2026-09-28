@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Muse File Bridge 一键安装脚本 (Windows)。
@@ -237,7 +237,7 @@ $tunAction = New-ScheduledTaskAction -Execute $Cloudflared -Argument $tunnelArgs
 $tunTrigger = New-ScheduledTaskTrigger -AtLogOn
 $tunPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
 $tunSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-$tunDesc = if ($trial) { "Muse File Bridge: Cloudflare 临时隧道" } else { "Muse File Bridge: Cloudflare 隧道" }
+$tunDesc = $(if ($trial) { "Muse File Bridge: Cloudflare 临时隧道" } else { "Muse File Bridge: Cloudflare 隧道" })  # 5.1 不支持 $x = if,包一层 $()
 try {
     Register-ScheduledTask -TaskName $TaskTunnel -Action $tunAction -Trigger $tunTrigger -Principal $tunPrincipal -Settings $tunSettings -Force -Description $tunDesc | Out-Null
 } catch {
@@ -267,7 +267,7 @@ while ((Get-Date) -lt $deadline) {
     } catch { Start-Sleep -Seconds 2 }
 }
 if ($health) {
-    $ro = if ($health.read_only) { "开" } else { "关" }
+    $ro = $(if ($health.read_only) { "开" } else { "关" })
     Write-Host ("OK: API 存活,开放目录: " + ($health.roots -join ", ") + ",只读模式: $ro")
 } else {
     Write-Warning "API 30 秒内没起来,看日志排查: $LogFile"
