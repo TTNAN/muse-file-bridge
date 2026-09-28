@@ -2,9 +2,11 @@
 
 [中文版](README_zh-CN.md)
 
-Let an AI assistant — or any HTTP client — securely read and write files on your Windows PC, exposed to the internet through a Cloudflare Tunnel.
+Let **Muse** — your personal AI assistant — get real hands on your Windows PC: securely read and write files in whitelisted folders, exposed to the internet through a Cloudflare Tunnel.
 
 No Git round-trips, no polling: files land on your disk in real time.
+
+Made for Muse first: the installer, the docs, and [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) (a paste-ready setup brief for Muse) all assume Muse on the other end. The API itself is plain HTTPS + bearer token, so any HTTP client can use it too.
 
 ## Why not MCP?
 
@@ -118,7 +120,7 @@ Limits: 2 MB per read, 10 MB per write, ~1000 requests/minute **shared by all tu
 
 Every request is audit-logged on the PC (`%USERPROFILE%\.muse-bridge\audit.log`, JSON lines): timestamp, endpoint, root, relative path, status code.
 
-Setting up an AI assistant to use this API? Paste [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) into it.
+Setting up Muse to use this API? Paste [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) into it — it's a ready-made setup brief.
 
 ## Security model
 

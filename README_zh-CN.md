@@ -2,9 +2,11 @@
 
 [English](README.md)
 
-让 AI 助手（或任何 HTTP 客户端）通过 Cloudflare 隧道，安全地读写你 Windows 电脑上的文件。
+让 **Muse**——你的个人 AI 助手——在你的 Windows 电脑上真正动手：安全地读写白名单目录里的文件，经 Cloudflare 隧道暴露到公网。
 
 不用经过 Git 中转、不用轮询：文件实时直写到你的硬盘上。
+
+为 Muse 而造：安装脚本、文档和 [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md)（给 Muse 的粘贴即用对接说明）都是按 Muse 在对面来写的。API 本身是普通的 HTTPS + bearer token，任何 HTTP 客户端也都能用。
 
 ## 为什么不用 MCP？
 
@@ -118,7 +120,7 @@ python client\pcfile.py sync .\my-plugin plugins my-plugin
 
 所有请求都会记审计日志（电脑上 `%USERPROFILE%\.muse-bridge\audit.log`，每行一个 JSON）：时间、接口、目录、相对路径、结果码。
 
-想让某个 AI 助手对接这个 API？把 [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) 整个粘贴给它。
+想让 Muse 对接这个 API？把 [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) 整个粘贴给它就行。
 
 ## 安全模型
 
