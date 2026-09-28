@@ -3,15 +3,27 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.0.1] - 2026-09-28
+
+### Fixed
+
+- `install.ps1` / `uninstall.ps1`: added UTF-8 BOM and fixed two PowerShell
+  5.1 syntax errors (`if` used as an expression). The installer previously
+  failed with `ParserError` on Chinese Windows running PowerShell 5.1.
+- `install.ps1`: folder ACL setup now passes the user's SID to `icacls`
+  instead of parsing its output — Windows usernames containing spaces
+  (e.g. `Haonan Tong`) no longer break the install.
 
 ### Changed
 
-- READMEs restructured: one diagram up top (no prose "how it works"), unbroken
-  4-step install with a prompt table, a single consolidated safety section
-  ("What you can count on"), local health-check command, sleep/sign-out note,
-  Windows 11 Terminal instructions, PowerShell-first client examples, FAQ as a
-  table. "Why not MCP" moved to Advanced. English + Chinese.
+- READMEs restructured: one Mermaid diagram up top (replaces the ASCII
+  diagram, which misaligned wherever Chinese characters were rendered),
+  an `English | 简体中文` language switcher, unbroken 4-step install with a
+  prompt table, a single consolidated safety section ("What you can count
+  on"), local health-check command, sleep/sign-out note (being unreachable
+  during sleep is normal; no need to disable sleep), Windows 11 Terminal
+  instructions, PowerShell-first client examples, FAQ as a table.
+  "Why not MCP" moved to Advanced. English + Chinese.
 
 ## [1.0.0] - 2026-09-28
 
