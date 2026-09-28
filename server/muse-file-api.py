@@ -186,7 +186,7 @@ def load_token():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "MuseBridge/1.0"
+    server_version = "MuseBridge/" + VERSION  # 和协议版本保持一致
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[bridge] " + fmt % args + "\n")
