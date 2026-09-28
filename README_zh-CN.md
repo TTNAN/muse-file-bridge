@@ -239,3 +239,11 @@ CHANGELOG.md              版本更新记录
 ## 许可证
 
 MIT — 见 [LICENSE](LICENSE)。
+
+## 请我喝杯咖啡
+
+如果这个项目帮你省了点时间，欢迎请我喝杯咖啡。☕
+
+| 支付宝 | 微信支付 |
+| ------ | -------- |
+| ![支付宝收款码](assets/alipay.jpg) | ![微信支付收款码](assets/wechat-pay.png) |
