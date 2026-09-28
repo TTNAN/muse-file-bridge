@@ -8,6 +8,10 @@ Talk to muse-file-api.py running on your Windows PC (exposed via Cloudflare Tunn
 Auth: bearer token via --token or the MUSE_BRIDGE_TOKEN environment variable.
 URL:  --base-url or the MUSE_BRIDGE_URL environment variable.
 
+The base URL must be https (your Cloudflare Tunnel address). Plain http is
+refused unless you pass --allow-http or set MUSE_BRIDGE_ALLOW_HTTP=1, which
+is only meant for local testing against 127.0.0.1.
+
 Examples:
     export MUSE_BRIDGE_TOKEN="paste-your-token-here"
     export MUSE_BRIDGE_URL="https://bridge.yourdomain.com"
@@ -46,6 +50,12 @@ def get_base_url(args: argparse.Namespace) -> str:
     if not url:
         raise SystemExit("missing base url: pass --base-url or set MUSE_BRIDGE_URL")
     if not url.startswith("https://"):
+        allow = args.allow_http or os.environ.get("MUSE_BRIDGE_ALLOW_HTTP") == "1"
+        if not allow:
+            raise SystemExit(
+                "refusing plain http: the token would travel in cleartext. "
+                "Use your https tunnel URL, or pass --allow-http "
+                "(only for local testing against 127.0.0.1).")
         print("warning: base url is not https; the token will travel in cleartext",
               file=sys.stderr)
     return url
@@ -127,6 +137,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Muse File Bridge client")
     ap.add_argument("--base-url", help="tunnel URL, e.g. https://bridge.yourdomain.com")
     ap.add_argument("--token", help="access token (or set MUSE_BRIDGE_TOKEN)")
+    ap.add_argument("--allow-http", action="store_true",
+                    help="allow plain http (local testing only)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("health", help="liveness check + exposed roots")

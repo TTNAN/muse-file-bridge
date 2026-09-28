@@ -10,7 +10,12 @@ Muse File Bridge - Windows 本地文件 API 服务端
     且全程是 Cloudflare 的 TLS 加密。
   - 每个请求都要带 Authorization: Bearer <token>,token 首次运行时自动生成,
     存在你用户目录下的 .muse-bridge/token,只有你本机能看到。
+    可随时调 POST /api/rotate-token 轮换(旧令牌立即失效)。
   - 只能操作 config.json 里 roots 白名单中的目录;路径穿越(../)会被直接拒绝。
+    首次运行默认只开放一个空的 ~/Documents/MuseBridge,且为只读模式。
+  - 每个请求限流(默认每 IP 每分钟 1000 次),超了返回 429。
+  - 所有请求记审计日志(.muse-bridge/audit.log): 时间、接口、目录、路径、结果码。
+  - 写文件是原子操作(临时文件 + 替换),不会留下半截文件。
 
 安装运行(只需一次):
   推荐: 下载本仓库后,在 PowerShell 里运行仓库根目录的 install.ps1,
@@ -26,6 +31,7 @@ Muse File Bridge - Windows 本地文件 API 服务端
   5. 用记事本打开 %USERPROFILE%\\.muse-bridge\\config.json,
      把 roots 改成你想让 Muse 访问的文件夹,例如:
          {"port": 18790, "roots": {"projects": "D:\\\\Projects", "plugins": "D:\\\\MyPlugins"}}
+     默认 read_only=true(只读,写/建目录会被拒绝);确认要让 Muse 写文件时再改成 false。
      改完后重启本脚本生效。
 
 配合 Cloudflare 隧道(另开一个终端):
@@ -38,11 +44,16 @@ Muse File Bridge - Windows 本地文件 API 服务端
   把最后的公网地址告诉 Muse,Muse 会发你安全卡片并验证连通。
 
 接口(均为 Muse 调用,全部需要鉴权):
-  GET  /api/health?                  -> {"ok": true, "roots": [...]}
+  GET  /api/health?                  -> {"ok": true, "roots": [...], "read_only": bool}
   GET  /api/list?root=NAME&path=REL  -> 目录列表
   GET  /api/read?root=NAME&path=REL  -> 读文件(文本直接返回,二进制转 base64)
-  POST /api/write  {root, path, content, encoding} -> 写文件(自动建父目录)
+  POST /api/write  {root, path, content, encoding} -> 写文件(自动建父目录,原子写入)
   POST /api/mkdir  {root, path}      -> 建目录
+  POST /api/rotate-token             -> 轮换令牌(旧令牌立即失效,返回新令牌)
+
+  只读模式(read_only=true)下 write/mkdir 返回 403;超限流返回 429。
+  审计日志记在 %USERPROFILE%\.muse-bridge\audit.log。
+  给 Muse 用的对接说明见仓库根目录 CONNECTOR-BRIEF.md。
 """
 
 import argparse
@@ -54,25 +65,54 @@ import json
 import os
 import secrets
 import sys
+import tempfile
+import threading
+import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 APP_DIR = os.path.join(os.path.expanduser("~"), ".muse-bridge")
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 TOKEN_PATH = os.path.join(APP_DIR, "token")
+AUDIT_PATH = os.path.join(APP_DIR, "audit.log")
 MAX_READ_BYTES = 2 * 1024 * 1024    # 单次读取上限 2MB
 MAX_WRITE_BYTES = 10 * 1024 * 1024  # 单次写入上限 10MB
+RATE_LIMIT = 1000  # 每个 IP 每 RATE_WINDOW 秒最多请求数
+RATE_WINDOW = 60   # 秒
+_rate = {}
+_rate_lock = threading.Lock()
+
+
+def check_rate(ip: str) -> bool:
+    """简易滑窗限流,超了返回 False。"""
+    now = time.monotonic()
+    with _rate_lock:
+        start, count = _rate.get(ip, (now, 0))
+        if now - start >= RATE_WINDOW:
+            start, count = now, 0
+        count += 1
+        _rate[ip] = (start, count)
+        return count <= RATE_LIMIT
 
 
 def load_config():
+    """返回 (port, roots, read_only)。
+
+    首次运行生成默认配置: 只开放一个空的 ~/Documents/MuseBridge 目录,
+    且默认为只读模式,避免误把整个用户目录交出去。
+    """
     os.makedirs(APP_DIR, exist_ok=True)
-    home = os.path.expanduser("~")
     if not os.path.exists(CONFIG_PATH):
+        bridge_dir = os.path.join(os.path.expanduser("~"), "Documents", "MuseBridge")
+        os.makedirs(bridge_dir, exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump({"port": 18790, "roots": {"home": home}}, f,
-                      ensure_ascii=False, indent=2)
+            json.dump({"port": 18790, "read_only": True,
+                       "roots": {"bridge": bridge_dir}},
+                      f, ensure_ascii=False, indent=2)
         print(f"已生成配置文件: {CONFIG_PATH}")
-        print("  用记事本打开它,把 roots 改成你想让 Muse 访问的文件夹,改完重启本脚本。")
+        print("  默认只开放一个空的 MuseBridge 目录(只读模式)。")
+        print("  用记事本按需修改 roots / read_only,改完重启本脚本生效。")
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = json.load(f)
     roots = {}
@@ -86,7 +126,7 @@ def load_config():
     if not roots:
         print("错误: 没有可用的目录白名单,请先编辑 config.json 再运行。")
         sys.exit(1)
-    return cfg.get("port", 18790), roots
+    return cfg.get("port", 18790), roots, bool(cfg.get("read_only", False))
 
 
 def load_token():
@@ -118,6 +158,28 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        self._audit(code)
+
+    def _audit(self, code):
+        """审计日志(JSON Lines): 时间、客户端、接口、鉴权、root、相对路径、结果码。"""
+        info = getattr(self, "_audit_info", None) or {}
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "client": self.client_address[0],
+            "method": self.command,
+            "endpoint": info.get("endpoint"),
+            "authed": bool(info.get("authed")),
+            "root": info.get("root"),
+            "path": info.get("rel"),
+            "code": code,
+        }
+        if info.get("bytes") is not None:
+            entry["bytes"] = info["bytes"]
+        try:
+            with open(AUDIT_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
 
     def _authed(self):
         auth = self.headers.get("Authorization", "")
@@ -141,18 +203,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- GET ----
     def do_GET(self):
+        self._audit_info = {"endpoint": urlparse(self.path).path}
+        if not check_rate(self.client_address[0]):
+            return self._send(429, {"error": "rate limit exceeded"})
         if not self._authed():
             return self._send(401, {"error": "unauthorized"})
+        self._audit_info["authed"] = True
         u = urlparse(self.path)
         q = parse_qs(u.query)
 
         if u.path == "/api/health":
-            return self._send(200, {"ok": True, "roots": sorted(self.server.roots)})
+            return self._send(200, {"ok": True,
+                                   "roots": sorted(self.server.roots),
+                                   "read_only": self.server.read_only})
 
         if u.path == "/api/list":
-            target, err = self._resolve(q.get("root", [""])[0], q.get("path", [""])[0])
+            root_name, rel = q.get("root", [""])[0], q.get("path", [""])[0]
+            target, err = self._resolve(root_name, rel)
             if err:
                 return self._send(400, {"error": err})
+            self._audit_info.update(root=root_name, rel=rel)
             if not os.path.isdir(target):
                 return self._send(404, {"error": "not a directory"})
             entries = []
@@ -175,9 +245,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"entries": entries})
 
         if u.path == "/api/read":
-            target, err = self._resolve(q.get("root", [""])[0], q.get("path", [""])[0])
+            root_name, rel = q.get("root", [""])[0], q.get("path", [""])[0]
+            target, err = self._resolve(root_name, rel)
             if err:
                 return self._send(400, {"error": err})
+            self._audit_info.update(root=root_name, rel=rel)
             if not os.path.isfile(target):
                 return self._send(404, {"error": "not a file"})
             size = os.path.getsize(target)
@@ -185,6 +257,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(413, {"error": f"file too large ({size} bytes)"})
             with open(target, "rb") as f:
                 data = f.read()
+            self._audit_info["bytes"] = len(data)
             try:
                 return self._send(200, {"encoding": "text", "content": data.decode("utf-8")})
             except UnicodeDecodeError:
@@ -195,8 +268,12 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- POST ----
     def do_POST(self):
+        self._audit_info = {"endpoint": urlparse(self.path).path}
+        if not check_rate(self.client_address[0]):
+            return self._send(429, {"error": "rate limit exceeded"})
         if not self._authed():
             return self._send(401, {"error": "unauthorized"})
+        self._audit_info["authed"] = True
         u = urlparse(self.path)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -210,10 +287,28 @@ class Handler(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, ValueError):
             return self._send(400, {"error": "invalid json"})
 
+        if u.path == "/api/rotate-token":
+            # 用旧令牌换新令牌: 旧令牌立即失效,新令牌只通过本次响应返回
+            new_tok = secrets.token_urlsafe(32)
+            with open(TOKEN_PATH, "w", encoding="utf-8") as f:
+                f.write(new_tok)
+            try:
+                os.chmod(TOKEN_PATH, 0o600)
+            except OSError:
+                pass
+            self.server.token = new_tok
+            return self._send(200, {"ok": True, "token": new_tok})
+
+        if u.path in ("/api/write", "/api/mkdir") and self.server.read_only:
+            return self._send(403, {"error": "read-only mode "
+                                             "(set read_only=false in config.json)"})
+
         if u.path == "/api/write":
-            target, err = self._resolve(body.get("root", ""), body.get("path", ""))
+            root_name, rel = body.get("root", ""), body.get("path", "")
+            target, err = self._resolve(root_name, rel)
             if err:
                 return self._send(400, {"error": err})
+            self._audit_info.update(root=root_name, rel=rel)
             enc = body.get("encoding", "text")
             try:
                 data = (body.get("content", "").encode("utf-8") if enc == "text"
@@ -227,14 +322,30 @@ class Handler(BaseHTTPRequestHandler):
             parent = os.path.dirname(target)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-            with open(target, "wb") as f:
-                f.write(data)
+            # 原子写入: 先写临时文件再替换,崩溃也不会留下半截文件
+            fd, tmp = tempfile.mkstemp(dir=parent or None,
+                                       prefix=".bridge-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(data)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, target)
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+            self._audit_info["bytes"] = len(data)
             return self._send(200, {"ok": True, "bytes": len(data)})
 
         if u.path == "/api/mkdir":
-            target, err = self._resolve(body.get("root", ""), body.get("path", ""))
+            root_name, rel = body.get("root", ""), body.get("path", "")
+            target, err = self._resolve(root_name, rel)
             if err:
                 return self._send(400, {"error": err})
+            self._audit_info.update(root=root_name, rel=rel)
             os.makedirs(target, exist_ok=True)
             return self._send(200, {"ok": True})
 
@@ -251,14 +362,16 @@ def main():
         log = open(args.log_file, "a", encoding="utf-8", buffering=1)
         sys.stdout = log
         sys.stderr = log
-    port, roots = load_config()
+    port, roots, read_only = load_config()
     token, is_new = load_token()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.token = token
     server.roots = roots
+    server.read_only = read_only
     print("=" * 64)
     print("Muse File Bridge 已启动")
     print(f"  监听: http://127.0.0.1:{port} (仅本机)")
+    print(f"  只读模式: {'开(写/建目录会被拒绝)' if read_only else '关'}")
     print("  开放目录:")
     for name, p in roots.items():
         print(f"    {name} -> {p}")

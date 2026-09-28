@@ -9,7 +9,7 @@
 
 $ErrorActionPreference = "Stop"
 
-foreach ($name in @("MuseBridge API", "MuseBridge Tunnel")) {
+foreach ($name in @("MuseFileBridge API", "MuseFileBridge Tunnel")) {
     $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if ($t) {
         Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
