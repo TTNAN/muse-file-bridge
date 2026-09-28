@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- READMEs rewritten for beginners: step-by-step installer walkthrough (every
+  prompt explained), plain-language safety section, technical reference moved
+  to an "Advanced" section. English + Chinese.
+
 ## [1.0.0] - 2026-09-28
 
 First public release: give Muse real hands on your Windows PC —
