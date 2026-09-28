@@ -110,7 +110,7 @@ Every endpoint requires `Authorization: Bearer <token>`.
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | GET | `/api/health` | Liveness check, lists exposed roots and protocol `version` |
-| GET | `/api/list?root=NAME&path=REL` | List directory entries |
+| GET | `/api/list?root=NAME&path=REL` | List directory entries (capped at 5000, `truncated: true` when capped) |
 | GET | `/api/read?root=NAME&path=REL` | Read a file (UTF-8 text, or base64 for binary) |
 | POST | `/api/write` | JSON `{root, path, content, encoding}` — writes a file, creating parent dirs |
 | POST | `/api/mkdir` | JSON `{root, path}` — creates a directory |
@@ -154,6 +154,7 @@ CONNECTOR-BRIEF.md        Paste-ready brief for wiring an AI assistant to this A
 server/muse-file-api.py   Windows file API server (Python standard library only)
 client/pcfile.py          Standalone client (Python standard library only)
 tests/smoke_test.py       End-to-end smoke test, standard library only
+CHANGELOG.md              Release notes
 ```
 
 ## License

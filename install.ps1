@@ -33,22 +33,47 @@ function Refresh-PathEnv {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + `
                 [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
+function Write-Utf8NoBom($Path, $Text) {
+    # PowerShell 5.1 的 Set-Content -Encoding UTF8 会带 BOM,Python 的 json.load(encoding="utf-8")
+    # 遇到 BOM 直接抛 JSONDecodeError,而 PowerShell 自己读没事,导致"安装成功但服务起不来"。
+    # 用 .NET 直接写无 BOM 的 UTF-8(pwsh 7 才有 -Encoding utf8NoBOM)。
+    [System.IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding $false))
+}
 
 # ---------- 1. Python ----------
 Write-Step "检查 Python"
-$py = Get-Command python.exe -ErrorAction SilentlyContinue
-if (-not $py) {
-    Write-Host "没找到 Python,尝试用 winget 安装 Python 3.12..."
+function Get-RealPython {
+    # py 启动器优先: 直接问它真正的解释器路径
+    $pyLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        try {
+            $p = (& $pyLauncher.Source -3 -c "import sys; print(sys.executable)" 2>$null).Trim()
+            if ($p -and (Test-Path $p) -and $p -notlike "*WindowsApps*") { return $p }
+        } catch { }
+    }
+    # PATH 里的 python.exe 逐个试,跳过微软商店占位符
+    foreach ($c in (Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
+        if ($c.Source -like "*WindowsApps*") { continue }  # 商店占位符,不是真解释器
+        try {
+            $v = (& $c.Source --version 2>&1).ToString()
+            if ($v -match "^Python \d") { return $c.Source }
+        } catch { }
+    }
+    return $null
+}
+$pyExe = Get-RealPython
+if (-not $pyExe) {
+    Write-Host "没找到真正的 Python,尝试用 winget 安装 Python 3.12..."
     try {
         winget install --id Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
         Refresh-PathEnv
-        $py = Get-Command python.exe -ErrorAction SilentlyContinue
-    } catch { $py = $null }
+        $pyExe = Get-RealPython
+    } catch { $pyExe = $null }
 }
-if (-not $py) {
+if (-not $pyExe) {
     throw "还是没找到 python.exe。请手动安装 Python 3.9+(安装时勾选 'Add python.exe to PATH')后重跑本脚本。"
 }
-$ver = (& $py.Source --version 2>&1).ToString()
+$ver = (& $pyExe --version 2>&1).ToString()
 if ($ver -match "Python (\d+)\.(\d+)") {
     if ([int]$Matches[1] -lt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -lt 9)) {
         throw "Python 版本太旧 ($ver),需要 3.9+。"
@@ -56,8 +81,8 @@ if ($ver -match "Python (\d+)\.(\d+)") {
 } else {
     throw "无法识别 Python 版本: $ver"
 }
-Write-Host "OK: $ver ($($py.Source))"
-$pythonw = Join-Path (Split-Path $py.Source -Parent) "pythonw.exe"
+Write-Host "OK: $ver ($pyExe)"
+$pythonw = Join-Path (Split-Path $pyExe -Parent) "pythonw.exe"
 if (-not (Test-Path $pythonw)) { throw "没找到 pythonw.exe,请完整重装一次 Python。" }
 
 # ---------- 2. cloudflared ----------
@@ -92,7 +117,10 @@ if (Test-Path $TokenFile) {
     # 旧版安装曾把 token 设成只读 (R),补成 (R,W) 以免 /api/rotate-token 写不进去
     try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R,W)" | Out-Null } catch { }
 } else {
-    $token = (& $py.Source -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+    # token 首字符避开 '-',否则客户端 --token <值> 会被 argparse 当成选项
+    do {
+        $token = (& $pyExe -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+    } while ($token.StartsWith("-"))
     Set-Content -Path $TokenFile -Value $token -NoNewline -Encoding Ascii
     try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R,W)" | Out-Null } catch { }
     Write-Host "已生成新令牌,保存在: $TokenFile (仅你可读写,供服务端轮换令牌时写入)"
@@ -120,7 +148,8 @@ if (-not (Test-Path $ConfigFile)) {
     if ($roots.Count -eq 0) { throw "没有有效的目录,安装中止。" }
     $roAnswer = Read-Host "允许 Muse 写入文件吗? 第一次建议选否(只读模式,随时可改) [y/N]"
     $readOnly = -not ($roAnswer -match "^[Yy]")
-    @{ port = $Port; read_only = $readOnly; roots = $roots } | ConvertTo-Json -Depth 3 | Set-Content -Path $ConfigFile -Encoding UTF8
+    $json = (@{ port = $Port; read_only = $readOnly; roots = $roots } | ConvertTo-Json -Depth 3)
+    Write-Utf8NoBom $ConfigFile $json  # 无 BOM,Python 才能读
     Write-Host "已生成: $ConfigFile (只读模式: $(if ($readOnly) { '开' } else { '关' }))。以后用记事本改,改完重启 '$TaskApi' 任务生效。"
 } else {
     Write-Host "config.json 已存在,跳过。"
@@ -138,7 +167,7 @@ if (-not (Test-Path $ConfigFile)) {
                 $defaultRoot = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "MuseBridge"
                 New-Item -ItemType Directory -Force -Path $defaultRoot | Out-Null
                 $cfg.roots = @{ bridge = $defaultRoot }
-                $cfg | ConvertTo-Json -Depth 3 | Set-Content -Path $ConfigFile -Encoding UTF8
+                Write-Utf8NoBom $ConfigFile ($cfg | ConvertTo-Json -Depth 3)  # 无 BOM
                 Write-Host "已收窄白名单,重启 '$TaskApi' 任务生效。"
             }
         }
@@ -153,7 +182,7 @@ $mode = Read-Host "隧道模式: [1] 命名隧道(长期稳定,需域名,推荐)
 if ($mode -eq "2") {
     $trial = $true
     Write-Host "试用模式: 将使用临时隧道地址(每次重启都会变,仅适合验证)。"
-    $tunnelArgs = "tunnel --url http://127.0.0.1:$Port --logfile `"$TunnelLog`""
+    $tunnelArgs = "--logfile `"$TunnelLog`" tunnel --url http://127.0.0.1:$Port"  # --logfile 是全局参数,必须放子命令前面
 } else {
     $exists = $false
     try {
@@ -186,38 +215,62 @@ if ($mode -eq "2") {
     } else {
         Write-Warning "已跳过域名绑定,稍后手动执行: cloudflared tunnel route dns $TunnelName <你的域名>"
     }
-    $tunnelArgs = "tunnel run --url http://127.0.0.1:$Port $TunnelName --logfile `"$TunnelLog`""
+    $tunnelArgs = "--logfile `"$TunnelLog`" tunnel run $TunnelName --url http://127.0.0.1:$Port"  # --logfile 是全局参数,必须放子命令前面
 }
 
 # ---------- 7. 自启动计划任务 ----------
 Write-Step "注册登录自启动"
-$taskUser = "$env:USERDOMAIN\$env:USERNAME"
+# 用当前登录身份的规范名: 微软账号/AAD 机器上 USERDOMAIN\USERNAME 可能对不上 SID
+$taskUser = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
 
 $apiAction = New-ScheduledTaskAction -Execute $pythonw -Argument "`"$ServerFile`" --log-file `"$LogFile`""
 $apiTrigger = New-ScheduledTaskTrigger -AtLogOn
 $apiPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
-$apiSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-Register-ScheduledTask -TaskName $TaskApi -Action $apiAction -Trigger $apiTrigger -Principal $apiPrincipal -Settings $apiSettings -Force -Description "Muse File Bridge: 本地文件 API (127.0.0.1:$Port)" | Out-Null
+$apiSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+try {
+    Register-ScheduledTask -TaskName $TaskApi -Action $apiAction -Trigger $apiTrigger -Principal $apiPrincipal -Settings $apiSettings -Force -Description "Muse File Bridge: 本地文件 API (127.0.0.1:$Port)" | Out-Null
+} catch {
+    throw "注册计划任务 '$TaskApi' 失败: $($_.Exception.Message)`n当前用户: $taskUser。请确认以本地用户身份运行 PowerShell,或手动在任务计划程序里创建。"
+}
 
 $tunAction = New-ScheduledTaskAction -Execute $Cloudflared -Argument $tunnelArgs -WorkingDirectory (Split-Path $Cloudflared -Parent)
 $tunTrigger = New-ScheduledTaskTrigger -AtLogOn
 $tunPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
-$tunSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+$tunSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 $tunDesc = if ($trial) { "Muse File Bridge: Cloudflare 临时隧道" } else { "Muse File Bridge: Cloudflare 隧道" }
-Register-ScheduledTask -TaskName $TaskTunnel -Action $tunAction -Trigger $tunTrigger -Principal $tunPrincipal -Settings $tunSettings -Force -Description $tunDesc | Out-Null
-Write-Host "OK: 已注册 '$TaskApi' 与 '$TaskTunnel'(用户登录时自动启动,无窗口)"
+try {
+    Register-ScheduledTask -TaskName $TaskTunnel -Action $tunAction -Trigger $tunTrigger -Principal $tunPrincipal -Settings $tunSettings -Force -Description $tunDesc | Out-Null
+} catch {
+    throw "注册计划任务 '$TaskTunnel' 失败: $($_.Exception.Message)`n当前用户: $taskUser。请确认以本地用户身份运行 PowerShell,或手动在任务计划程序里创建。"
+}
+Write-Host "OK: 已注册 '$TaskApi' 与 '$TaskTunnel'(用户登录时自动启动,无窗口,失败自动重启)"
+
+# 个别系统会把 0 当成默认 72 小时,装完确认「运行超过以下时间后停止」是关闭的
+foreach ($t in @($TaskApi, $TaskTunnel)) {
+    $limit = (Get-ScheduledTask -TaskName $t).Settings.ExecutionTimeLimit
+    if ($limit -and $limit -ne "PT0S") {
+        Write-Warning "任务 '$t' 的执行时间限制是 $limit,可能被系统自动杀掉。请在任务计划程序里把「如果任务运行超过以下时间就停止」关掉。"
+    }
+}
 
 # ---------- 8. 立即启动并验证 ----------
 Write-Step "启动并验证"
 Start-ScheduledTask -TaskName $TaskApi
-Start-Sleep -Seconds 3
-try {
-    $token = (Get-Content $TokenFile -Raw).Trim()
-    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 10
+Write-Host "等待 API 启动(Defender 首次扫描 pythonw 可能较慢,最多等 30 秒)..."
+$token = (Get-Content $TokenFile -Raw).Trim()
+$health = $null
+$deadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $deadline) {
+    try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 5
+        break
+    } catch { Start-Sleep -Seconds 2 }
+}
+if ($health) {
     $ro = if ($health.read_only) { "开" } else { "关" }
     Write-Host ("OK: API 存活,开放目录: " + ($health.roots -join ", ") + ",只读模式: $ro")
-} catch {
-    Write-Warning "API 似乎没起来,看日志排查: $LogFile"
+} else {
+    Write-Warning "API 30 秒内没起来,看日志排查: $LogFile"
 }
 Start-ScheduledTask -TaskName $TaskTunnel
 Write-Host "隧道启动中..."

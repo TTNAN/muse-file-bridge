@@ -48,7 +48,8 @@ Muse File Bridge - Windows 本地文件 API 服务端
 接口(均为 Muse 调用,全部需要鉴权):
   GET  /api/health?                  -> {"ok": true, "version": "0.3",
                                         "roots": [...], "read_only": bool}
-  GET  /api/list?root=NAME&path=REL  -> 目录列表
+  GET  /api/list?root=NAME&path=REL  -> 目录列表 {"entries": [...], "truncated": bool}
+                                        # 超过 5000 条截断并标记 truncated
   GET  /api/read?root=NAME&path=REL  -> 读文件(文本直接返回,二进制转 base64)
   POST /api/write  {root, path, content, encoding} -> 写文件(自动建父目录,原子写入)
   POST /api/mkdir  {root, path}      -> 建目录
@@ -56,7 +57,7 @@ Muse File Bridge - Windows 本地文件 API 服务端
                                         token 文件,不在响应里返回,防聊天记录泄漏)
 
   只读模式(read_only=true)下 write/mkdir 返回 403;超限流返回 429。
-  审计日志记在 %USERPROFILE%\.muse-bridge\audit.log。
+  审计日志记在 %USERPROFILE%\\.muse-bridge\\audit.log。
   给 Muse 用的对接说明见仓库根目录 CONNECTOR-BRIEF.md。
 """
 
@@ -85,8 +86,36 @@ MAX_WRITE_BYTES = 10 * 1024 * 1024  # 单次写入上限 10MB
 VERSION = "0.3"  # 协议版本, /api/health 返回,改协议时递增
 RATE_LIMIT = 1000  # 每个 IP 每 RATE_WINDOW 秒最多请求数
 RATE_WINDOW = 60   # 秒
+AUDIT_MAX_BYTES = 10 * 1024 * 1024  # 审计日志超过 10MB 就轮转
+AUDIT_KEEP = 3                      # 保留 3 个旧审计日志 (audit.log.1..3)
+LIST_MAX_ENTRIES = 5000  # /api/list 单次返回上限,超出截断并标记 truncated
 _rate = {}
 _rate_lock = threading.Lock()
+_audit_lock = threading.Lock()
+
+
+def rotate_file(path: str, max_bytes: int, keep: int):
+    """按大小轮转文件: path -> path.1 -> path.2 ...,最多保留 keep 个旧文件。"""
+    try:
+        if not os.path.exists(path) or os.path.getsize(path) < max_bytes:
+            return
+        oldest = f"{path}.{keep}"
+        if os.path.exists(oldest):
+            os.remove(oldest)
+        for i in range(keep - 1, 0, -1):
+            src = f"{path}.{i}"
+            if os.path.exists(src):
+                os.replace(src, f"{path}.{i + 1}")
+        os.replace(path, f"{path}.1")
+    except OSError:
+        pass
+
+
+def cap_entries(entries: list, limit: int):
+    """截断过长的列表,返回 (entries, truncated)。"""
+    if len(entries) > limit:
+        return entries[:limit], True
+    return entries, False
 
 
 def check_rate(ip: str) -> bool:
@@ -154,7 +183,7 @@ def load_config():
         print(f"已生成配置文件: {CONFIG_PATH}")
         print("  默认只开放一个空的 MuseBridge 目录(只读模式)。")
         print("  用记事本按需修改 roots / read_only,改完重启本脚本生效。")
-    with open(CONFIG_PATH, encoding="utf-8") as f:
+    with open(CONFIG_PATH, encoding="utf-8-sig") as f:  # utf-8-sig: 兼容 PowerShell 5.1 写的带 BOM 文件
         cfg = json.load(f)
     roots = {}
     for name, p in cfg.get("roots", {}).items():
@@ -170,12 +199,21 @@ def load_config():
     return cfg.get("port", 18790), roots, bool(cfg.get("read_only", False))
 
 
+def new_token() -> str:
+    """生成 Bearer token。首字符避开 '-',否则 CLI 里 `--token <值>` 会被
+    argparse 误当成选项 (token_urlsafe 首字符为 '-' 的概率约 1/64)。"""
+    while True:
+        tok = secrets.token_urlsafe(32)
+        if not tok.startswith("-"):
+            return tok
+
+
 def load_token():
     """返回 (token, 是否本次新生成)。"""
     if os.path.exists(TOKEN_PATH):
         with open(TOKEN_PATH, encoding="utf-8") as f:
             return f.read().strip(), False
-    tok = secrets.token_urlsafe(32)
+    tok = new_token()
     with open(TOKEN_PATH, "w", encoding="utf-8") as f:
         f.write(tok)
     try:
@@ -217,8 +255,10 @@ class Handler(BaseHTTPRequestHandler):
         if info.get("bytes") is not None:
             entry["bytes"] = info["bytes"]
         try:
-            with open(AUDIT_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            with _audit_lock:
+                rotate_file(AUDIT_PATH, AUDIT_MAX_BYTES, AUDIT_KEEP)
+                with open(AUDIT_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             pass
 
@@ -283,7 +323,8 @@ class Handler(BaseHTTPRequestHandler):
             except OSError as exc:
                 return self._send(500, {"error": str(exc)})
             entries.sort(key=lambda x: (x["type"] != "dir", x["name"].lower()))
-            return self._send(200, {"entries": entries})
+            entries, truncated = cap_entries(entries, LIST_MAX_ENTRIES)
+            return self._send(200, {"entries": entries, "truncated": truncated})
 
         if u.path == "/api/read":
             root_name, rel = q.get("root", [""])[0], q.get("path", [""])[0]
@@ -332,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
             # 轮换令牌: 旧令牌立即失效。新令牌只写本机 token 文件,
             # 不在响应里返回 —— 令牌永远不经过聊天/日志明文传输。
             # 轮换后请从 %USERPROFILE%\.muse-bridge\token 把新令牌抄到安全卡片。
-            new_tok = secrets.token_urlsafe(32)
+            new_tok = new_token()
             with open(TOKEN_PATH, "w", encoding="utf-8") as f:
                 f.write(new_tok)
             try:

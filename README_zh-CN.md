@@ -110,7 +110,7 @@ python client\pcfile.py sync .\my-plugin plugins my-plugin
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | GET | `/api/health` | 存活检查，返回开放的目录白名单和协议 `version` |
-| GET | `/api/list?root=NAME&path=REL` | 列目录 |
+| GET | `/api/list?root=NAME&path=REL` | 列目录（最多 5000 条，超限截断并标记 `truncated: true`） |
 | GET | `/api/read?root=NAME&path=REL` | 读文件（UTF-8 文本直接返回，二进制转 base64） |
 | POST | `/api/write` | JSON `{root, path, content, encoding}` —— 写文件，自动创建父目录 |
 | POST | `/api/mkdir` | JSON `{root, path}` —— 建目录 |
@@ -153,6 +153,7 @@ CONNECTOR-BRIEF.md        给 AI 助手看的对接说明(可直接粘贴)
 server/muse-file-api.py   Windows 文件 API 服务端（仅用 Python 标准库）
 client/pcfile.py          独立客户端（仅用 Python 标准库）
 tests/smoke_test.py       端到端冒烟测试（仅用 Python 标准库）
+CHANGELOG.md              版本更新记录
 ```
 
 ## 许可证

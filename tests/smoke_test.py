@@ -132,7 +132,7 @@ def main() -> int:
         s, l = req(base + "/api/list?root=test&path=", token)
         names = {e["name"] for e in l["entries"]}
         check("mkdir + list", s == 200 and "newdir" in names
-              and "a.txt" in names)
+              and "a.txt" in names and l.get("truncated") is False)
 
         # --- traversal / bad paths ---
         s, _ = req(base + "/api/read?root=test&path=" +
@@ -170,6 +170,9 @@ def main() -> int:
         ok = (p.returncode == 0
               and open(os.path.join(home, "data", "synced", "x.txt")).read()
               == "sync-me")
+        if not ok:
+            print(f"DIAG sync rc={p.returncode} stdout={p.stdout[-300:]!r} "
+                  f"stderr={p.stderr[-300:]!r}", flush=True)
         check("client sync", ok)
 
         # --- token rotation (new token is NOT in the response, only in the file) ---
@@ -244,6 +247,40 @@ def main() -> int:
     log = os.path.join(home, ".muse-bridge", "server.log")
     check("--log-file written", os.path.getsize(log) > 0)
     shutil.rmtree(home, ignore_errors=True)
+
+    # --- unit: rotate_file / cap_entries (import server module, no side effects) ---
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("muse_bridge_api", SERVER)
+    mba = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mba)
+    tmpd = tempfile.mkdtemp(prefix="bridge-unit-")
+    try:
+        p = os.path.join(tmpd, "audit.log")
+        with open(p, "w") as f:
+            f.write("x" * 100)
+        mba.rotate_file(p, max_bytes=50, keep=2)
+        check("audit rotates on size",
+              os.path.exists(p + ".1") and not os.path.exists(p))
+        with open(p, "w") as f:
+            f.write("y" * 100)
+        mba.rotate_file(p, max_bytes=50, keep=2)
+        check("audit keeps N old files",
+              os.path.exists(p + ".1") and os.path.exists(p + ".2")
+              and not os.path.exists(p + ".3"))
+        with open(p, "w") as f:
+            f.write("z")
+        mba.rotate_file(p, max_bytes=50, keep=2)
+        check("audit skips small files", os.path.exists(p)
+              and not os.path.exists(p + ".4"))
+        e, t = mba.cap_entries(list(range(10)), 5)
+        check("list truncates", e == [0, 1, 2, 3, 4] and t is True)
+        e, t = mba.cap_entries(list(range(5)), 5)
+        check("list keeps short lists", e == [0, 1, 2, 3, 4] and t is False)
+        toks = {mba.new_token() for _ in range(200)}
+        check("new_token never starts with '-'",
+              all(not t.startswith("-") for t in toks))
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0

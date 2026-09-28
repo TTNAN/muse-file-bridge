@@ -7,6 +7,9 @@ Talk to muse-file-api.py running on your Windows PC (exposed via Cloudflare Tunn
 
 Auth: bearer token via --token or the MUSE_BRIDGE_TOKEN environment variable.
 URL:  --base-url or the MUSE_BRIDGE_URL environment variable.
+Note: if a token starts with '-', pass it as --token=<value> (or use the
+env var) so argparse does not mistake it for an option. Tokens generated
+by current versions never start with '-'.
 
 The base URL must be https (your Cloudflare Tunnel address). Plain http is
 refused unless you pass --allow-http or set MUSE_BRIDGE_ALLOW_HTTP=1, which

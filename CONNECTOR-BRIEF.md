@@ -25,7 +25,7 @@ All endpoints require the bearer token. `root` is a whitelisted folder name (fro
 | Method | Path | Request | Response |
 | ------ | ---- | ------- | -------- |
 | GET | `/api/health` | — | `{"ok": true, "version": "0.3", "roots": ["projects", ...], "read_only": false}` |
-| GET | `/api/list?root=NAME&path=REL` | — | `{"entries": [{"name", "type": "file\|dir", "size", "mtime"}]}` |
+| GET | `/api/list?root=NAME&path=REL` | — | `{"entries": [{"name", "type": "file\|dir", "size", "mtime"}], "truncated": false}` — truncated=true means the listing was capped at 5000 entries |
 | GET | `/api/read?root=NAME&path=REL` | — | `{"encoding": "text", "content": "..."}` or `{"encoding": "base64", "content": "..."}` |
 | POST | `/api/write` | `{"root", "path", "content", "encoding": "text\|base64"}` | `{"ok": true, "bytes": N}` — creates parent dirs, atomic replace |
 | POST | `/api/mkdir` | `{"root", "path"}` | `{"ok": true}` |
