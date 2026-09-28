@@ -7,7 +7,7 @@
 You say "write me a Python script and put it in my Documents" — seconds later the file is on your disk. No more copy-pasting code out of chat.
 
 ```
-Windows PC                                              Internet               Client
+Windows PC                               Internet                     Client              
 ┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
 │ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
 │ listens on 127.0.0.1:18790 only  │◄────│  (TLS, your domain)  │◄────│ or curl /        │
