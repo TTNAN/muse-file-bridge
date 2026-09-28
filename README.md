@@ -6,7 +6,7 @@
 
 You say "write me a Python script and put it in my Documents" — seconds later the file is on your disk. No more copy-pasting code out of chat.
 
-**How it works (30-second version):**
+**How it works:**
 
 1. A small program runs on your PC. It only touches folders you approve — nothing else.
 2. A Cloudflare Tunnel gives that program an encrypted public address (TLS, like any https site).
@@ -20,7 +20,7 @@ Made for Muse first: the installer, the docs, and [CONNECTOR-BRIEF.md](CONNECTOR
 - About 10 minutes
 - No admin rights needed, no Python knowledge needed
 
-## Setup: just follow along
+## Setup
 
 ### Step 1 — Download
 
@@ -39,20 +39,20 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 > cd D:\muse-file-bridge-main\muse-file-bridge-main
 > ```
 
-The script installs Python and cloudflared for you (via winget — nothing to do manually). It will ask a few questions:
+The script installs Python and cloudflared automatically (via winget). It will ask a few questions:
 
-| It asks | What to pick |
-| ------- | ------------ |
-| Which directories may Muse access? (comma-separated, Enter for default) | **Just press Enter.** The default is `Documents\MuseBridge`, created for you |
-| Allow Muse to write files? First time, read-only is recommended [y/N] | **Type `n` the first time.** Read-only is the safe start; you can enable writes later |
-| Tunnel mode: [1] named tunnel (stable, needs a domain) [2] quick tunnel (throwaway) | **Pick `2` to try it out.** Pick 1 later when you have your own domain on Cloudflare |
+| Prompt | Recommendation |
+| ------ | -------------- |
+| Which directories may Muse access? (comma-separated, Enter for default) | **Press Enter.** The default is `Documents\MuseBridge`, which the script creates automatically |
+| Allow Muse to write files? First time, read-only is recommended [y/N] | **Type `n` on first install.** Read-only is the safe default; writes can be enabled later |
+| Tunnel mode: [1] named tunnel (stable, needs a domain) [2] quick tunnel (throwaway) | **Choose `2` for a first try.** Choose 1 later when you have your own domain on Cloudflare |
 
-Picked `2` (quick tunnel): at the end you'll get an address like `https://random-words.trycloudflare.com` — **it changes every time the PC restarts**, fine for a first try.
-Picked `1` (named tunnel): a browser window will pop up for Cloudflare login/authorization, then you'll enter a public hostname (e.g. `bridge.yourdomain.com`).
+Choosing `2` (quick tunnel): at the end you will receive an address like `https://random-words.trycloudflare.com`. **It changes every time the PC restarts** — suitable for evaluation only.
+Choosing `1` (named tunnel): a browser window will open for Cloudflare login and authorization; you will then enter a public hostname (e.g. `bridge.yourdomain.com`).
 
-Green "**All done!**" means you're set. The installer registered two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`) — no console windows, they run quietly in the background and restart if they crash.
+"**All done!**" indicates a successful install. The installer registers two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`) — no console windows; they run silently in the background and restart on failure.
 
-### Step 3 — Send the address to Muse and connect
+### Step 3 — Send the address to Muse
 
 Send the public address (the full `https://...`) to Muse.
 
@@ -62,22 +62,22 @@ Muse will send you a **secure card**. Open this file in Notepad:
 C:\Users\YourName\.muse-bridge\token
 ```
 
-Copy the long token and paste it into the card. **The token is a password: it goes into the card only, never into chat** (the card is encrypted end-to-end; chat is not).
+Copy the long token and paste it into the card. **The token is a password: enter it into the card only, never paste it into chat** (the card is encrypted end-to-end; chat is not).
 
-### Step 4 — Try it
+### Step 4 — Verify
 
 Tell Muse: "list the files in my bridge folder".
 
-If you picked read-only in step 2 (typed `n`), write attempts will be rejected — that's the protection working, not an error. To enable writes later: open `C:\Users\YourName\.muse-bridge\config.json` in Notepad, change `read_only` to `false`, save; then open Task Scheduler (search `taskschd.msc` in the Start menu), find `MuseFileBridge API`, right-click → Restart.
+If you chose read-only in step 2 (typed `n`), write attempts will be rejected — this is expected behavior, indicating the read-only protection is active. To enable writes later: open `C:\Users\YourName\.muse-bridge\config.json` in Notepad, change `read_only` to `false`, save; then open Task Scheduler (search `taskschd.msc` in the Start menu), find `MuseFileBridge API`, right-click → Restart.
 
-## Is it safe? (plain answers)
+## Security notes
 
-- **Muse only sees folders you approve.** If you only opened `Documents\MuseBridge`, your Desktop, Downloads and everything else on D: are invisible and untouchable. That's a hard server-side limit, not politeness.
-- **The token is a password.** It lives only in the token file on your PC and goes into the secure card. Rotate anytime with `python client/pcfile.py rotate-token` — the old one dies instantly, the new one is written only to your PC's file.
-- **Read-only by default.** Start read-only, confirm the assistant behaves, then enable writes yourself.
-- **Everything is logged.** Every read and write lands in `C:\Users\YourName\.muse-bridge\audit.log` (one JSON object per line) — audit whenever you like.
-- **Muse can't delete your files.** There is deliberately no delete endpoint.
-- **Changed your mind?** See "Uninstall" below — one command removes everything.
+- **Muse only sees folders you approve.** If you only opened `Documents\MuseBridge`, your Desktop, Downloads, and everything else on D: are invisible and inaccessible. This is a hard server-side restriction.
+- **The token is a password.** It exists only in the token file on your PC and is entered into the secure card. Rotate it anytime with `python client/pcfile.py rotate-token` — the old token is invalidated immediately; the new one is written only to your PC's file.
+- **Read-only by default.** Start in read-only mode, confirm the assistant behaves as expected, then enable writes manually.
+- **Everything is logged.** Every read and write is recorded in `C:\Users\YourName\.muse-bridge\audit.log` (one JSON object per line) for later review.
+- **Muse cannot delete your files.** There is intentionally no delete endpoint.
+- **Clean uninstall supported.** See "Uninstall" below.
 
 ## Uninstall
 
@@ -87,25 +87,25 @@ If you picked read-only in step 2 (typed `n`), write attempts will be rejected �
    powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
    ```
 
-2. It first removes the two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`) — the service stops immediately.
-3. Then it asks: also delete `C:\Users\YourName\.muse-bridge` (config, whitelist, token)?
-   - Type `y`: everything gone, unrecoverable. A future reinstall starts fresh.
-   - Just press Enter (`n`): config and token are kept. Re-running `install.ps1` later picks up where you left off, no reconfiguration needed.
+2. The script first removes the two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`); the service stops immediately.
+3. It then asks whether to also delete `C:\Users\YourName\.muse-bridge` (configuration, whitelist, and token):
+   - Type `y`: everything is deleted and unrecoverable. A future reinstall will start fresh.
+   - Press Enter (`n`): configuration and token are kept. Re-running `install.ps1` later resumes without reconfiguration.
 
-**What it deliberately leaves behind:**
+**What uninstall does not remove:**
 
-- Your whitelisted folders themselves (e.g. the files inside `Documents\MuseBridge`) — the uninstaller never touches your files.
-- Python and cloudflared — they're general-purpose tools other software may use.
+- Your whitelisted folders themselves (e.g. files inside `Documents\MuseBridge`) — the uninstaller never touches your files.
+- Python and cloudflared — both are general-purpose tools that other software may use.
 
-**Optional**: if you created a named tunnel and want it gone from Cloudflare too:
+**Optional**: if you created a named tunnel and want to remove it from Cloudflare as well:
 
 ```powershell
 cloudflared tunnel delete muse-bridge
 ```
 
-(Quick tunnels need nothing — they vanish when stopped.)
+(Quick tunnels expire automatically when stopped — no action needed.)
 
-> Deleted the unzipped folder already? Do it manually: search `taskschd.msc` in the Start menu to open Task Scheduler, find `MuseFileBridge API` and `MuseFileBridge Tunnel`, right-click → Delete; then manually delete the `C:\Users\YourName\.muse-bridge` folder if you want the config gone too.
+> If the unzipped folder was already deleted, remove manually: search `taskschd.msc` in the Start menu to open Task Scheduler, find `MuseFileBridge API` and `MuseFileBridge Tunnel`, right-click → Delete; then manually delete the `C:\Users\YourName\.muse-bridge` folder if you want the configuration gone too.
 
 ## Advanced: technical details
 
@@ -197,7 +197,7 @@ Setting up Muse to use this API? Paste [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) 
 
 ## Troubleshooting
 
-- **Installer throws ParserErrors / garbled Chinese** — you downloaded an old ZIP. Re-download the latest release (script encoding fixed).
+- **Installer throws ParserErrors / garbled Chinese** — the ZIP is outdated. Download the latest release (script encoding issue fixed).
 - **`401 unauthorized`** — the token the client uses doesn't match `%USERPROFILE%\.muse-bridge\token` on the PC. Copy it again (don't paste it into chat — use your assistant's secure credential flow).
 - **Client can't reach the server** — the PC is asleep/off, or a task isn't running. Check Task Scheduler → `MuseFileBridge API` / `MuseFileBridge Tunnel` → Last Run Result, and `%USERPROFILE%\.muse-bridge\server.log`.
 - **Tunnel address changed** — you're on a quick tunnel; its address changes on restart. Send the new address to your assistant. For a stable address, re-run the installer and pick a named tunnel.
