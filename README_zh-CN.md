@@ -6,11 +6,14 @@
 
 你说"帮我写个 Python 脚本放 Documents 里"，几秒钟后文件就出现在你电脑上了——不用再从聊天记录里复制粘贴代码。
 
-**工作原理：**
-
-1. 你电脑上跑一个小服务，它只认你批准的文件夹，别的一概不碰。
-2. Cloudflare 隧道给这个服务一个加密的公网地址（跟 https 网站一样，传输全程加密）。
-3. Muse 拿着令牌（相当于密码，只有你有）经隧道来读写文件。
+```
+Windows 电脑                                        公网                 客户端
+┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+│ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
+│ 只监听 127.0.0.1:18790           │◄────│  (TLS, 你的域名)     │◄────│ 或 curl /        │
+│ 仅开放白名单目录                 │     │                      │     │ 任何 HTTP 客户端 │
+└──────────────────────────────────┘     └──────────────────────┘     └──────────────────┘
+```
 
 为 Muse 而造：安装脚本、文档、[CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md)（给 Muse 的粘贴即用对接说明）都是按 Muse 在对面来写的。API 本身是普通 HTTPS + 令牌，任何 HTTP 客户端也都能用。
 
@@ -28,13 +31,13 @@
 
 ### 第 2 步：运行一键安装
 
-打开解压出来的文件夹（能看到 `install.ps1` 的那一层），在空白处按住 **Shift + 右键**，选择"**在此处打开 PowerShell 窗口**"，粘贴下面这行，回车：
+打开解压出来的文件夹（能看到 `install.ps1` 的那一层），在空白处点右键，选"**在终端中打开**"（Win11；Win10 按住 **Shift + 右键**，选"**在此处打开 PowerShell 窗口**"），粘贴下面这行，回车：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-> 如果右键菜单里没有"在此处打开 PowerShell 窗口"：点开始菜单搜 `powershell` 打开它，再用 `cd` 进到解压的文件夹，例如：
+> 如果右键菜单里没有终端选项：点开始菜单搜 `powershell` 打开它，再用 `cd` 进到解压的文件夹，例如：
 > ```powershell
 > cd D:\muse-file-bridge-main\muse-file-bridge-main
 > ```
@@ -52,6 +55,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 出现"**全部完成！**"即表示安装成功。安装程序会注册两个开机自启动任务（`MuseFileBridge API` 和 `MuseFileBridge Tunnel`），无命令行窗口，在后台静默运行，异常退出后自动重启。
 
+> **注意**：电脑进入睡眠或注销登录后，两个任务都会停止，Muse 就连不上了——这是最常见的"突然连不上"原因。长期使用建议：设置 → 系统 → 电源，将睡眠设为"从不"，并保持登录状态（锁屏可以，注销不行）。
+
 ### 第 3 步：将地址发给 Muse 并完成连接
 
 把上一步得到的公网地址（`https://...` 那一整串）发给 Muse。
@@ -66,22 +71,33 @@ C:\Users\你的用户名\.muse-bridge\token
 
 ### 第 4 步：验证
 
-跟 Muse 说："列一下我 bridge 文件夹里有什么"。
+先在本机确认服务活着（PowerShell 里运行）：
+
+```powershell
+$t = (Get-Content "$env:USERPROFILE\.muse-bridge\token" -Raw).Trim()
+Invoke-RestMethod -Headers @{Authorization = "Bearer $t"} http://127.0.0.1:18790/api/health
+```
+
+看到 `ok : True` 说明服务端正常（如果改过端口，把 `18790` 换成你的端口）。再在浏览器打开你的公网地址：看到 `401` 说明隧道是通的（只是没带令牌）；打不开或超时，说明隧道没起来或电脑休眠了。
+
+都没问题，再跟 Muse 说："列一下我 bridge 文件夹里有什么"。
 
 如果第 2 步选择了只读模式（输入了 `n`），Muse 的写文件请求会被拒绝——这是预期行为，表示只读保护正在生效。如需启用写入：用记事本打开 `C:\Users\你的用户名\.muse-bridge\config.json`，把 `read_only` 改成 `false`，保存；然后点开始菜单搜 `taskschd.msc` 打开任务计划程序，找到 `MuseFileBridge API`，右键"重新启动"。
 
-## 安全性说明
+## 你能指望什么
 
-- **Muse 只能访问你批准的文件夹。** 例如仅开放 `文档\MuseBridge` 时，桌面、下载目录及 D 盘其他位置均不可见、不可访问。这是服务端的强制限制。
-- **令牌相当于密码。** 仅保存在你电脑上的 token 文件中，仅用于填入安全卡片。如需更换：执行 `python client/pcfile.py rotate-token`，旧令牌立即失效，新令牌仅写入你电脑上的文件。
+- **Muse 只能访问你批准的文件夹。** 例如仅开放 `文档\MuseBridge` 时，桌面、下载目录及 D 盘其他位置均不可见、不可访问。`..` 穿越、绝对路径、符号链接逃逸都会被拦截。这是服务端的强制限制。
+- **服务端只监听本机。** 它只绑定 `127.0.0.1`，除了经由你自己的隧道，局域网和公网都连不进来。
+- **令牌相当于密码。** 仅保存在你电脑上的 token 文件中（文件权限仅限你本人），仅用于填入安全卡片。如需更换：执行 `python client/pcfile.py rotate-token`，旧令牌立即失效，新令牌仅写入你电脑上的文件。
 - **默认只读。** 建议首次使用只读模式，确认 Muse 的行为符合预期后，再手动开启写入。
 - **所有操作均有审计日志。** Muse 读取或写入的文件都会记录在 `C:\Users\你的用户名\.muse-bridge\audit.log` 中（每行一条），可随时查看。
+- **写文件是原子操作。** 传输中途断掉也不会留下写一半的文件。
 - **Muse 无法删除你的文件。** 服务端未提供删除接口。
 - **支持干净卸载。** 详见下面的"卸载"章节。
 
 ## 卸载
 
-1. 打开之前解压的文件夹（包含 `uninstall.ps1` 的那一层），**Shift + 右键** → "在此处打开 PowerShell 窗口"，运行：
+1. 打开之前解压的文件夹（包含 `uninstall.ps1` 的那一层），在空白处点右键选"**在终端中打开**"（Win11；Win10 按住 **Shift + 右键** 选"**在此处打开 PowerShell 窗口**"），运行：
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
@@ -107,18 +123,7 @@ cloudflared tunnel delete muse-bridge
 
 > 如果解压的文件夹已被删除，可手动操作：点开始菜单搜索 `taskschd.msc` 打开任务计划程序，在列表里找到 `MuseFileBridge API` 和 `MuseFileBridge Tunnel`，右键删除；再手动删掉 `C:\Users\你的用户名\.muse-bridge` 文件夹（如果想清配置的话）。
 
-## 进阶：技术细节
-
-### 架构
-
-```
-Windows 电脑                                        公网                 客户端
-┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
-│ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
-│ 只监听 127.0.0.1:18790           │◄────│  (TLS, 你的域名)     │◄────│ 或 curl /        │
-│ 仅开放白名单目录                 │     │                      │     │ 任何 HTTP 客户端 │
-└──────────────────────────────────┘     └──────────────────────┘     └──────────────────┘
-```
+## 进阶
 
 ### 为什么不用 MCP？
 
@@ -154,6 +159,22 @@ cloudflared tunnel run --url http://127.0.0.1:18790 muse-bridge
 
 ### 客户端（给助手 / 开发者用）
 
+Windows PowerShell：
+
+```powershell
+$env:MUSE_BRIDGE_TOKEN="<第 3 步填进卡片的令牌>"
+$env:MUSE_BRIDGE_URL="https://bridge.你的域名.com"
+
+python client\pcfile.py health
+python client\pcfile.py list projects
+python client\pcfile.py read projects notes/todo.txt
+python client\pcfile.py write projects notes/todo.txt ./todo.txt
+python client\pcfile.py mkdir projects new-folder
+python client\pcfile.py sync .\my-plugin plugins my-plugin   # 上传整个文件夹
+```
+
+Linux / macOS：
+
 ```bash
 export MUSE_BRIDGE_TOKEN="<第 3 步填进卡片的令牌>"
 export MUSE_BRIDGE_URL="https://bridge.你的域名.com"
@@ -185,27 +206,19 @@ python client/pcfile.py sync ./my-plugin plugins my-plugin   # 上传整个文�
 
 如需让 Muse 对接该 API，将 [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) 全文粘贴给它即可。
 
-### 安全模型（完整版）
+### 常见问题
 
-- 服务端只绑定 `127.0.0.1`——除了经由你自己的隧道，局域网和公网都连不进来。
-- 每个请求都要带令牌（常量时间比较）。令牌只存在你电脑 `%USERPROFILE%\.muse-bridge\token` 里，文件权限仅限当前用户。随时可以调 `POST /api/rotate-token` 轮换，不用重启。
-- 只能访问 `roots` 白名单里的目录。`..` 穿越、绝对路径、符号链接逃逸都会被拦截（先解析成真实路径再校验）。默认配置只开放一个空的 `文档\MuseBridge`。
-- 新装默认**只读模式**——能读不能写——直到你把 `config.json` 里的 `read_only` 改成 `false`。第一次对接任何助手都建议先只读。
-- 请求限流（每分钟约 1000 次，整条隧道共享）+ 审计日志（`audit.log`，10 MB 自动轮转保留 3 份）：时间、接口、目录、路径、结果码——助手读了写了什么，随时可查。
-- 写文件是原子操作（临时文件 + 替换），传一半断掉也不会留下半截文件。
-- 隧道提供 TLS。命名隧道地址稳定；安装脚本也能起一个 `trycloudflare.com` 临时隧道先体验，但每次重启地址都会变。
-
-## 常见问题
-
-- **安装脚本报 ParserError / 中文乱码**——下载的 ZIP 为旧版本。请重新下载最新版（脚本编码问题已修复）。
-- **报 `401 unauthorized`**——客户端用的令牌和电脑上 `%USERPROFILE%\.muse-bridge\token` 对不上。重新复制一次（别贴进聊天，用助手的安全卡片流程）。
-- **客户端连不上服务端**——电脑休眠/关机了，或者某个计划任务没跑起来。去任务计划程序看 `MuseFileBridge API` / `MuseFileBridge Tunnel` 的"上次运行结果"，以及 `%USERPROFILE%\.muse-bridge\server.log` 日志。
-- **隧道地址变了**——你用的是临时隧道，重启后地址会变；把新地址发给助手更新。长期用请重跑安装选命名隧道。
-- **端口被占用**——改 `%USERPROFILE%\.muse-bridge\config.json` 里的 `port`，重启 `MuseFileBridge API` 任务（隧道命令里是同一个端口）。
-- **换令牌**——`python client/pcfile.py rotate-token`（需先设好令牌和地址）。旧令牌立即失效；新令牌只写在电脑 `%USERPROFILE%\.muse-bridge\token` 里，API 不返回、终端不打印，自己去文件里抄。
-- **写操作被拒绝（`403`）**——服务端在只读模式。把 `%USERPROFILE%\.muse-bridge\config.json` 里的 `read_only` 改成 `false`，重启 `MuseFileBridge API` 任务。
-- **助手到底动了哪些文件？**——看 `%USERPROFILE%\.muse-bridge\audit.log`，每行一个 JSON。
-- **`tunnel route dns` 失败**——该域名的 DNS zone 必须在你登录的那个 Cloudflare 账号下。
+| 现象 | 怎么办 |
+| ---- | ------ |
+| 安装脚本报 ParserError / 中文乱码 | 下载的 ZIP 为旧版本。请重新下载最新版（脚本编码问题已修复） |
+| `401 unauthorized` | 客户端用的令牌和电脑上 `%USERPROFILE%\.muse-bridge\token` 对不上。重新复制一次（别贴进聊天，用助手的安全卡片流程） |
+| 客户端连不上服务端 | 先确认电脑没休眠、用户没注销（最常见原因）。再去任务计划程序看 `MuseFileBridge API` / `MuseFileBridge Tunnel` 的"上次运行结果"，以及 `%USERPROFILE%\.muse-bridge\server.log` 日志 |
+| 隧道地址变了 | 用的是临时隧道，重启后地址会变；把新地址发给助手更新。长期用请重跑安装选命名隧道 |
+| 端口被占用 | 改 `%USERPROFILE%\.muse-bridge\config.json` 里的 `port`，重启 `MuseFileBridge API` 任务（隧道命令里是同一个端口） |
+| 想换令牌 | `python client/pcfile.py rotate-token`（需先设好令牌和地址）。旧令牌立即失效；新令牌只写在电脑 `%USERPROFILE%\.muse-bridge\token` 里，API 不返回、终端不打印，自己去文件里抄 |
+| 写操作被拒绝（`403`） | 服务端在只读模式。把 `%USERPROFILE%\.muse-bridge\config.json` 里的 `read_only` 改成 `false`，重启 `MuseFileBridge API` 任务 |
+| 助手到底动了哪些文件？ | 看 `%USERPROFILE%\.muse-bridge\audit.log`，每行一个 JSON |
+| `tunnel route dns` 失败 | 该域名的 DNS zone 必须在你登录的那个 Cloudflare 账号下 |
 
 ## 项目结构
 

@@ -7,9 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- READMEs rewritten for beginners: step-by-step installer walkthrough (every
-  prompt explained), plain-language safety section, technical reference moved
-  to an "Advanced" section. English + Chinese.
+- READMEs restructured: one diagram up top (no prose "how it works"), unbroken
+  4-step install with a prompt table, a single consolidated safety section
+  ("What you can count on"), local health-check command, sleep/sign-out note,
+  Windows 11 Terminal instructions, PowerShell-first client examples, FAQ as a
+  table. "Why not MCP" moved to Advanced. English + Chinese.
 
 ## [1.0.0] - 2026-09-28
 

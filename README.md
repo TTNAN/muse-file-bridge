@@ -6,11 +6,14 @@
 
 You say "write me a Python script and put it in my Documents" — seconds later the file is on your disk. No more copy-pasting code out of chat.
 
-**How it works:**
-
-1. A small program runs on your PC. It only touches folders you approve — nothing else.
-2. A Cloudflare Tunnel gives that program an encrypted public address (TLS, like any https site).
-3. Muse connects through the tunnel using a secret token (like a password, only you hold it).
+```
+Windows PC                                              Internet               Client
+┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+│ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
+│ listens on 127.0.0.1:18790 only  │◄────│  (TLS, your domain)  │◄────│ or curl /        │
+│ whitelisted folders only         │     │                      │     │ any HTTP client  │
+└──────────────────────────────────┘     └──────────────────────┘     └──────────────────┘
+```
 
 Made for Muse first: the installer, the docs, and [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) (a paste-ready setup brief for Muse) all assume Muse on the other end. The API itself is plain HTTPS + bearer token, so any HTTP client can use it too.
 
@@ -28,13 +31,13 @@ Click **Code → Download ZIP** at the top right of this page, then unzip it any
 
 ### Step 2 — Run the one-click installer
 
-Open the unzipped folder (the one containing `install.ps1`), **Shift + right-click** an empty spot, choose "**Open PowerShell window here**", then paste and hit Enter:
+Open the unzipped folder (the one containing `install.ps1`), right-click an empty spot and choose "**Open in Terminal**" (Windows 11; on Windows 10, hold **Shift**, right-click, and choose "**Open PowerShell window here**"), then paste the following and press Enter:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-> No "Open PowerShell window here" in the menu? Open PowerShell from the Start menu, then `cd` into the folder, e.g.:
+> No terminal option in the right-click menu? Open PowerShell from the Start menu, then `cd` into the unzipped folder, e.g.:
 > ```powershell
 > cd D:\muse-file-bridge-main\muse-file-bridge-main
 > ```
@@ -52,6 +55,8 @@ Choosing `1` (named tunnel): a browser window will open for Cloudflare login and
 
 "**All done!**" indicates a successful install. The installer registers two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`) — no console windows; they run silently in the background and restart on failure.
 
+> **Note**: when the PC sleeps or you sign out, both tasks stop and Muse loses connection — this is the most common cause of sudden disconnects. For always-on use: Settings → System → Power, set sleep to "Never", and stay signed in (locking the screen is fine; signing out is not).
+
 ### Step 3 — Send the address to Muse
 
 Send the public address (the full `https://...`) to Muse.
@@ -66,22 +71,33 @@ Copy the long token and paste it into the card. **The token is a password: enter
 
 ### Step 4 — Verify
 
-Tell Muse: "list the files in my bridge folder".
+First confirm the server is alive locally (run in PowerShell):
+
+```powershell
+$t = (Get-Content "$env:USERPROFILE\.muse-bridge\token" -Raw).Trim()
+Invoke-RestMethod -Headers @{Authorization = "Bearer $t"} http://127.0.0.1:18790/api/health
+```
+
+`ok : True` means the server is fine (replace `18790` if you changed the port). Then open your public address in a browser: a `401` means the tunnel is through (it's just missing the token); a timeout means the tunnel isn't up or the PC is asleep.
+
+If both look good, tell Muse: "list the files in my bridge folder".
 
 If you chose read-only in step 2 (typed `n`), write attempts will be rejected — this is expected behavior, indicating the read-only protection is active. To enable writes later: open `C:\Users\YourName\.muse-bridge\config.json` in Notepad, change `read_only` to `false`, save; then open Task Scheduler (search `taskschd.msc` in the Start menu), find `MuseFileBridge API`, right-click → Restart.
 
-## Security notes
+## What you can count on
 
-- **Muse only sees folders you approve.** If you only opened `Documents\MuseBridge`, your Desktop, Downloads, and everything else on D: are invisible and inaccessible. This is a hard server-side restriction.
-- **The token is a password.** It exists only in the token file on your PC and is entered into the secure card. Rotate it anytime with `python client/pcfile.py rotate-token` — the old token is invalidated immediately; the new one is written only to your PC's file.
+- **Muse only sees folders you approve.** If you only opened `Documents\MuseBridge`, your Desktop, Downloads, and everything else on D: are invisible and inaccessible. `..` traversal, absolute paths, and symlink escapes are rejected. This is a hard server-side restriction.
+- **The server only listens locally.** It binds to `127.0.0.1` — unreachable from your LAN or the internet except through your own tunnel.
+- **The token is a password.** It exists only in the token file on your PC (file permissions restricted to your user) and is entered into the secure card. Rotate it anytime with `python client/pcfile.py rotate-token` — the old token is invalidated immediately; the new one is written only to your PC's file.
 - **Read-only by default.** Start in read-only mode, confirm the assistant behaves as expected, then enable writes manually.
 - **Everything is logged.** Every read and write is recorded in `C:\Users\YourName\.muse-bridge\audit.log` (one JSON object per line) for later review.
+- **Writes are atomic.** An interrupted transfer never leaves a half-written file.
 - **Muse cannot delete your files.** There is intentionally no delete endpoint.
 - **Clean uninstall supported.** See "Uninstall" below.
 
 ## Uninstall
 
-1. Open the folder you unzipped earlier (the one containing `uninstall.ps1`), **Shift + right-click** an empty spot → "Open PowerShell window here", then run:
+1. Open the folder you unzipped earlier (the one containing `uninstall.ps1`), right-click an empty spot and choose "**Open in Terminal**" (Windows 11; on Windows 10, hold **Shift**, right-click → "**Open PowerShell window here**"), then run:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
@@ -107,18 +123,7 @@ cloudflared tunnel delete muse-bridge
 
 > If the unzipped folder was already deleted, remove manually: search `taskschd.msc` in the Start menu to open Task Scheduler, find `MuseFileBridge API` and `MuseFileBridge Tunnel`, right-click → Delete; then manually delete the `C:\Users\YourName\.muse-bridge` folder if you want the configuration gone too.
 
-## Advanced: technical details
-
-### Architecture
-
-```
-Windows PC                                              Internet               Client
-┌──────────────────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
-│ muse-file-api.py                 │     │  Cloudflare Tunnel   │     │ pcfile.py        │
-│ listens on 127.0.0.1:18790 only  │◄────│  (TLS, your domain)  │◄────│ or curl /        │
-│ whitelisted folders only         │     │                      │     │ any HTTP client  │
-└──────────────────────────────────┘     └──────────────────────┘     └──────────────────┘
-```
+## Advanced
 
 ### Why not MCP?
 
@@ -154,6 +159,22 @@ cloudflared tunnel run --url http://127.0.0.1:18790 muse-bridge
 
 ### Client (for assistants / developers)
 
+Windows PowerShell:
+
+```powershell
+$env:MUSE_BRIDGE_TOKEN="<the token from step 3>"
+$env:MUSE_BRIDGE_URL="https://bridge.yourdomain.com"
+
+python client\pcfile.py health
+python client\pcfile.py list projects
+python client\pcfile.py read projects notes/todo.txt
+python client\pcfile.py write projects notes/todo.txt ./todo.txt
+python client\pcfile.py mkdir projects new-folder
+python client\pcfile.py sync .\my-plugin plugins my-plugin   # upload a whole folder
+```
+
+Linux / macOS:
+
 ```bash
 export MUSE_BRIDGE_TOKEN="<the token from step 3>"
 export MUSE_BRIDGE_URL="https://bridge.yourdomain.com"
@@ -185,27 +206,19 @@ Limits: 2 MB per read, 10 MB per write, ~1000 requests/minute **shared by all tu
 
 Setting up Muse to use this API? Paste [CONNECTOR-BRIEF.md](CONNECTOR-BRIEF.md) into it — it's a ready-made setup brief.
 
-### Security model (full version)
+### Troubleshooting
 
-- The server binds to `127.0.0.1` only — unreachable from your LAN, let alone the internet, except through your own tunnel.
-- Every request needs the bearer token (compared in constant time). The token lives in `%USERPROFILE%\.muse-bridge\token` on your PC, with file permissions restricted to your user. Rotate it anytime with `POST /api/rotate-token` (no restart needed).
-- Only directories listed in `roots` are visible. `..` traversal, absolute paths and symlink escapes are rejected (paths are resolved against their real path before checking). The default config exposes only an empty `Documents\MuseBridge` folder.
-- New installs default to **read-only mode** — reads work, writes are rejected — until you set `read_only: false` in `config.json`. Recommended for the first connection to any assistant.
-- Requests are rate-limited (~1000/min, shared by all tunnel traffic since the server sees it all as `127.0.0.1`) and audit-logged (`audit.log`, auto-rotated at 10 MB keeping 3 files): time, endpoint, root, path, status code — so you can always see what an assistant read or wrote.
-- Writes are atomic (temp file + replace), so an interrupted transfer never leaves a half-written file.
-- The tunnel provides TLS. A named tunnel gives you a stable address; the installer can also spin up a `trycloudflare.com` quick tunnel for a first try, but its address changes on every restart.
-
-## Troubleshooting
-
-- **Installer throws ParserErrors / garbled Chinese** — the ZIP is outdated. Download the latest release (script encoding issue fixed).
-- **`401 unauthorized`** — the token the client uses doesn't match `%USERPROFILE%\.muse-bridge\token` on the PC. Copy it again (don't paste it into chat — use your assistant's secure credential flow).
-- **Client can't reach the server** — the PC is asleep/off, or a task isn't running. Check Task Scheduler → `MuseFileBridge API` / `MuseFileBridge Tunnel` → Last Run Result, and `%USERPROFILE%\.muse-bridge\server.log`.
-- **Tunnel address changed** — you're on a quick tunnel; its address changes on restart. Send the new address to your assistant. For a stable address, re-run the installer and pick a named tunnel.
-- **Port already in use** — change `port` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` task (the tunnel command uses the same port).
-- **Rotate the token** — `python client/pcfile.py rotate-token` (needs token/URL set). The old token dies immediately; copy the new one from `%USERPROFILE%\.muse-bridge\token` — it is never printed or returned over the API.
-- **Writes rejected with `403`** — the server is in read-only mode. Set `read_only: false` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` task.
-- **What did the assistant touch?** — check `%USERPROFILE%\.muse-bridge\audit.log` (one JSON object per line).
-- **`tunnel route dns` fails** — the domain's DNS zone must be on the Cloudflare account you logged into.
+| Symptom | What to do |
+| ------- | ---------- |
+| Installer throws ParserErrors / garbled Chinese | The ZIP is outdated. Download the latest release (script encoding issue fixed) |
+| `401 unauthorized` | The client's token doesn't match `%USERPROFILE%\.muse-bridge\token` on the PC. Copy it again (never paste into chat — use the assistant's secure card flow) |
+| Client can't reach the server | First confirm the PC isn't asleep and the user is still signed in (most common cause). Then check Task Scheduler → `MuseFileBridge API` / `MuseFileBridge Tunnel` → Last Run Result, and `%USERPROFILE%\.muse-bridge\server.log` |
+| Tunnel address changed | You're on a quick tunnel; its address changes on restart. Send the new address to your assistant. For a stable address, re-run the installer and pick a named tunnel |
+| Port already in use | Change `port` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` task (the tunnel command uses the same port) |
+| Rotate the token | `python client/pcfile.py rotate-token` (needs token/URL set). The old token dies immediately; copy the new one from `%USERPROFILE%\.muse-bridge\token` — it is never printed or returned over the API |
+| Writes rejected with `403` | The server is in read-only mode. Set `read_only: false` in `%USERPROFILE%\.muse-bridge\config.json` and restart the `MuseFileBridge API` task |
+| What did the assistant touch? | Check `%USERPROFILE%\.muse-bridge\audit.log` (one JSON object per line) |
+| `tunnel route dns` fails | The domain's DNS zone must be on the Cloudflare account you logged into |
 
 ## Project layout
 
