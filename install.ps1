@@ -115,14 +115,15 @@ Write-Step "访问令牌"
 if (Test-Path $TokenFile) {
     Write-Host "令牌已存在,跳过生成。"
     # 旧版安装曾把 token 设成只读 (R),补成 (R,W) 以免 /api/rotate-token 写不进去
-    try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R,W)" | Out-Null } catch { }
+    # 用户名可能含空格(如 "Haonan Tong"),icacls 解析不可靠,直接用 SID
+    try { $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value; icacls $TokenFile /inheritance:r /grant:r ("*{0}:(R,W)" -f $sid) | Out-Null } catch { }
 } else {
     # token 首字符避开 '-',否则客户端 --token <值> 会被 argparse 当成选项
     do {
         $token = (& $pyExe -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
     } while ($token.StartsWith("-"))
     Set-Content -Path $TokenFile -Value $token -NoNewline -Encoding Ascii
-    try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R,W)" | Out-Null } catch { }
+    try { $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value; icacls $TokenFile /inheritance:r /grant:r ("*{0}:(R,W)" -f $sid) | Out-Null } catch { }
     Write-Host "已生成新令牌,保存在: $TokenFile (仅你可读写,供服务端轮换令牌时写入)"
 }
 Write-Host "等 Muse 发你安全卡片后,把这个文件里的令牌填进去。不要发在聊天里。"
