@@ -79,6 +79,34 @@ C:\Users\你的用户名\.muse-bridge\token
 - **Muse 删不了你的文件。** 服务端故意没做删除接口。
 - **不想用了就卸。** 见下面的"卸载"章节，一条命令清干净。
 
+## 卸载
+
+1. 打开当初解压的文件夹（能看到 `uninstall.ps1` 的那一层），**Shift + 右键** → "在此处打开 PowerShell 窗口"，运行：
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+   ```
+
+2. 它会先删掉两个开机自启动任务（`MuseFileBridge API` 和 `MuseFileBridge Tunnel`），服务立即停止。
+3. 然后问你：要不要一并删除 `C:\Users\你的用户名\.muse-bridge`（里面的配置、白名单、令牌）？
+   - 输入 `y`：全清，不可恢复。以后重装就当全新安装。
+   - 直接回车（`n`）：保留配置和令牌。以后重跑 `install.ps1` 就能接着用，不用重新配。
+
+**它不会删的东西（故意的）：**
+
+- 你的白名单文件夹本身（比如 `文档\MuseBridge` 里面的文件）——卸载脚本永远不会动你的文件。
+- Python 和 cloudflared——它们是通用工具，别的软件也可能在用，不碰。
+
+**可选**：如果你当时建的是命名隧道，想把 Cloudflare 那边的隧道也删干净：
+
+```powershell
+cloudflared tunnel delete muse-bridge
+```
+
+（临时隧道不用管，停掉就没了。）
+
+> 解压的文件夹已经删了？那就手动来：点开始菜单搜 `taskschd.msc` 打开任务计划程序，在列表里找到 `MuseFileBridge API` 和 `MuseFileBridge Tunnel`，右键删除；再手动删掉 `C:\Users\你的用户名\.muse-bridge` 文件夹（如果想清配置的话）。
+
 ## 进阶：技术细节
 
 ### 架构
