@@ -36,7 +36,7 @@ Open the unzipped folder (the one containing `install.ps1`), right-click an empt
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-> No terminal option in the right-click menu? Open PowerShell from the Start menu, then `cd` into the unzipped folder, e.g.:
+> No terminal option in the right-click menu? Open PowerShell from the Start menu, then `cd` into the unzipped folder (the level where you can see `install.ps1`), e.g.:
 > ```powershell
 > cd D:\muse-file-bridge-main\muse-file-bridge-main
 > ```
@@ -54,7 +54,7 @@ Choosing `1` (named tunnel): a browser window will open for Cloudflare login and
 
 "**All done!**" indicates a successful install. The installer registers two auto-start tasks (`MuseFileBridge API` and `MuseFileBridge Tunnel`) — no console windows; they run silently in the background and restart on failure.
 
-> **Note**: when the PC sleeps or you sign out, both tasks stop and Muse loses connection — this is the most common cause of sudden disconnects. For always-on use: Settings → System → Power, set sleep to "Never", and stay signed in (locking the screen is fine; signing out is not).
+> **Note**: when the PC sleeps or you sign out, both tasks stop and Muse loses connection — this is the most common cause of sudden disconnects. No connection during sleep is normal; it resumes automatically after wake, so you don't need to set sleep to "Never". You do need to stay signed in (locking the screen is fine; signing out is not).
 
 ### Step 3 — Send the address to Muse
 
@@ -77,7 +77,7 @@ $t = (Get-Content "$env:USERPROFILE\.muse-bridge\token" -Raw).Trim()
 Invoke-RestMethod -Headers @{Authorization = "Bearer $t"} http://127.0.0.1:18790/api/health
 ```
 
-`ok : True` means the server is fine (replace `18790` if you changed the port). Then open your public address in a browser: a `401` means the tunnel is through (it's just missing the token); a timeout means the tunnel isn't up or the PC is asleep.
+`ok : True` means the server is fine (replace `18790` if you changed the port). Then open your public address in a browser: a `401`, an "unauthorized" prompt, or a browser error page all mean the tunnel is through (it's just missing the token); a spinning timeout means the tunnel isn't up or the PC is asleep.
 
 If both look good, tell Muse: "list the files in my bridge folder".
 

@@ -36,7 +36,7 @@ flowchart LR
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-> 如果右键菜单里没有终端选项：点开始菜单搜 `powershell` 打开它，再用 `cd` 进到解压的文件夹，例如：
+> 如果右键菜单里没有终端选项：点开始菜单搜 `powershell` 打开它，再用 `cd` 进到解压的文件夹（进到能看见 `install.ps1` 的那一层），例如：
 > ```powershell
 > cd D:\muse-file-bridge-main\muse-file-bridge-main
 > ```
@@ -54,7 +54,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 出现"**全部完成！**"即表示安装成功。安装程序会注册两个开机自启动任务（`MuseFileBridge API` 和 `MuseFileBridge Tunnel`），无命令行窗口，在后台静默运行，异常退出后自动重启。
 
-> **注意**：电脑进入睡眠或注销登录后，两个任务都会停止，Muse 就连不上了——这是最常见的"突然连不上"原因。长期使用建议：设置 → 系统 → 电源，将睡眠设为"从不"，并保持登录状态（锁屏可以，注销不行）。
+> **注意**：电脑进入睡眠或注销登录后，两个任务都会停止，Muse 就连不上了——这是最常见的"突然连不上"原因。睡眠时连不上是正常的，唤醒后自动恢复，不必专门把睡眠设为"从不"；但必须保持登录状态（锁屏可以，注销不行）。
 
 ### 第 3 步：将地址发给 Muse 并完成连接
 
@@ -77,7 +77,7 @@ $t = (Get-Content "$env:USERPROFILE\.muse-bridge\token" -Raw).Trim()
 Invoke-RestMethod -Headers @{Authorization = "Bearer $t"} http://127.0.0.1:18790/api/health
 ```
 
-看到 `ok : True` 说明服务端正常（如果改过端口，把 `18790` 换成你的端口）。再在浏览器打开你的公网地址：看到 `401` 说明隧道是通的（只是没带令牌）；打不开或超时，说明隧道没起来或电脑休眠了。
+看到 `ok : True` 说明服务端正常（如果改过端口，把 `18790` 换成你的端口）。再在浏览器打开你的公网地址：看到 `401`、提示未授权、或浏览器直接显示无法打开页面，都算隧道通了（只是没带令牌）；一直转圈超时，说明隧道没起来或电脑休眠了。
 
 都没问题，再跟 Muse 说："列一下我 bridge 文件夹里有什么"。
 
