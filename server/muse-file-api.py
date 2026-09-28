@@ -46,7 +46,8 @@ Muse File Bridge - Windows 本地文件 API 服务端
   把最后的公网地址告诉 Muse,Muse 会发你安全卡片并验证连通。
 
 接口(均为 Muse 调用,全部需要鉴权):
-  GET  /api/health?                  -> {"ok": true, "roots": [...], "read_only": bool}
+  GET  /api/health?                  -> {"ok": true, "version": "0.3",
+                                        "roots": [...], "read_only": bool}
   GET  /api/list?root=NAME&path=REL  -> 目录列表
   GET  /api/read?root=NAME&path=REL  -> 读文件(文本直接返回,二进制转 base64)
   POST /api/write  {root, path, content, encoding} -> 写文件(自动建父目录,原子写入)
@@ -81,6 +82,7 @@ TOKEN_PATH = os.path.join(APP_DIR, "token")
 AUDIT_PATH = os.path.join(APP_DIR, "audit.log")
 MAX_READ_BYTES = 2 * 1024 * 1024    # 单次读取上限 2MB
 MAX_WRITE_BYTES = 10 * 1024 * 1024  # 单次写入上限 10MB
+VERSION = "0.3"  # 协议版本, /api/health 返回,改协议时递增
 RATE_LIMIT = 1000  # 每个 IP 每 RATE_WINDOW 秒最多请求数
 RATE_WINDOW = 60   # 秒
 _rate = {}
@@ -252,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
 
         if u.path == "/api/health":
-            return self._send(200, {"ok": True,
+            return self._send(200, {"ok": True, "version": VERSION,
                                    "roots": sorted(self.server.roots),
                                    "read_only": self.server.read_only})
 

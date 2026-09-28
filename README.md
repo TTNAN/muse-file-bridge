@@ -107,7 +107,7 @@ Every endpoint requires `Authorization: Bearer <token>`.
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| GET | `/api/health` | Liveness check, lists exposed roots |
+| GET | `/api/health` | Liveness check, lists exposed roots and protocol `version` |
 | GET | `/api/list?root=NAME&path=REL` | List directory entries |
 | GET | `/api/read?root=NAME&path=REL` | Read a file (UTF-8 text, or base64 for binary) |
 | POST | `/api/write` | JSON `{root, path, content, encoding}` — writes a file, creating parent dirs |

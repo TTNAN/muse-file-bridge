@@ -103,7 +103,7 @@ def main() -> int:
         # --- health ---
         s, h = req(base + "/api/health", token)
         check("health ok", s == 200 and h["roots"] == ["test"]
-              and h["read_only"] is False)
+              and h["read_only"] is False and h.get("version") == "0.3")
 
         # --- write/read text ---
         s, _ = req(base + "/api/write", token,

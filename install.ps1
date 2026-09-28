@@ -89,6 +89,8 @@ Write-Host "OK: $ServerFile (重跑本脚本即可更新)"
 Write-Step "访问令牌"
 if (Test-Path $TokenFile) {
     Write-Host "令牌已存在,跳过生成。"
+    # 旧版安装曾把 token 设成只读 (R),补成 (R,W) 以免 /api/rotate-token 写不进去
+    try { icacls $TokenFile /inheritance:r /grant:r "$env:USERNAME:(R,W)" | Out-Null } catch { }
 } else {
     $token = (& $py.Source -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
     Set-Content -Path $TokenFile -Value $token -NoNewline -Encoding Ascii

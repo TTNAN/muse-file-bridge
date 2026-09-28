@@ -107,7 +107,7 @@ python client\pcfile.py sync .\my-plugin plugins my-plugin
 
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
-| GET | `/api/health` | 存活检查，返回开放的目录白名单 |
+| GET | `/api/health` | 存活检查，返回开放的目录白名单和协议 `version` |
 | GET | `/api/list?root=NAME&path=REL` | 列目录 |
 | GET | `/api/read?root=NAME&path=REL` | 读文件（UTF-8 文本直接返回，二进制转 base64） |
 | POST | `/api/write` | JSON `{root, path, content, encoding}` —— 写文件，自动创建父目录 |
