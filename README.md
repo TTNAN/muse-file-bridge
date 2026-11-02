@@ -245,6 +245,6 @@ MIT — see [LICENSE](LICENSE).
 
 If this project saved you some time, feel free to buy me a coffee. ☕
 
-| Alipay | WeChat Pay |
-| ------ | ---------- |
-| ![Alipay](assets/alipay.jpg) | ![WeChat Pay](assets/wechat-pay.png) |
+| WeChat Pay |
+| ---------- |
+| ![WeChat Pay](assets/wechat-pay.png) |
