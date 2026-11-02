@@ -244,6 +244,6 @@ MIT — 见 [LICENSE](LICENSE)。
 
 如果这个项目帮你省了点时间，欢迎请我喝杯咖啡。☕
 
-| 微信支付 |
+| 微信赞赏码 |
 | -------- |
-| ![微信支付收款码](assets/wechat-pay.png) |
+| ![微信赞赏码](assets/wechat-pay.png) |

@@ -245,6 +245,6 @@ MIT — see [LICENSE](LICENSE).
 
 If this project saved you some time, feel free to buy me a coffee. ☕
 
-| WeChat Pay |
+| WeChat Reward |
 | ---------- |
-| ![WeChat Pay](assets/wechat-pay.png) |
+| ![WeChat Reward QR](assets/wechat-pay.png) |
